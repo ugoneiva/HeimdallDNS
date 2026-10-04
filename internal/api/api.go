@@ -18,6 +18,7 @@ import (
 	"github.com/ugoneiva/HeimdallDNS/internal/clients"
 	"github.com/ugoneiva/HeimdallDNS/internal/filter"
 	"github.com/ugoneiva/HeimdallDNS/internal/querylog"
+	"github.com/ugoneiva/HeimdallDNS/internal/security"
 	"github.com/ugoneiva/HeimdallDNS/internal/server"
 	"github.com/ugoneiva/HeimdallDNS/internal/store"
 	"github.com/ugoneiva/HeimdallDNS/internal/upstream"
@@ -35,9 +36,17 @@ type Deps struct {
 	Clients  *clients.Registry
 	Store    *store.Store
 	Log      *querylog.Recorder
-	UI       fs.FS // arquivos do painel; nil = sem painel
-	Secure   bool  // HTTPS: o cookie de sessão leva a marca Secure
+	Security *security.Manager
+	NRD      NRDInfo // idade dos domínios (nil = sem checagem)
+	UI       fs.FS   // arquivos do painel; nil = sem painel
+	Secure   bool    // HTTPS: o cookie de sessão leva a marca Secure
 	Logger   *slog.Logger
+}
+
+// NRDInfo é o que a API usa do verificador de domínios recém-registrados.
+type NRDInfo interface {
+	Age(name string) (time.Duration, bool)
+	Block(name string) (rule string, block bool)
 }
 
 type api struct {
@@ -94,6 +103,15 @@ func build(d Deps) (*api, http.Handler) {
 	api.HandleFunc("GET /api/stats/realtime", a.realtime)
 	api.HandleFunc("GET /api/stats/live", a.liveStats)
 	api.HandleFunc("POST /api/auth/password", a.changePassword)
+	if d.Security != nil {
+		api.HandleFunc("GET /api/security/events", a.securityEvents)
+		api.HandleFunc("GET /api/security/summary", a.securitySummary)
+		api.HandleFunc("POST /api/security/events/{id}/ack", a.setEventStatus("ack"))
+		api.HandleFunc("POST /api/security/events/{id}/reopen", a.setEventStatus("open"))
+		api.HandleFunc("GET /api/security/settings", a.getSecuritySettings)
+		api.HandleFunc("PUT /api/security/settings", a.putSecuritySettings)
+		api.HandleFunc("POST /api/security/ignore", a.ignoreDomain)
+	}
 
 	root := http.NewServeMux()
 	root.HandleFunc("GET /api/auth/state", a.authState)

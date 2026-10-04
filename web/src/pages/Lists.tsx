@@ -14,7 +14,8 @@ const suggestions = [
   {
     name: 'HaGeZi Threat Intelligence',
     url: 'https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/tif.txt',
-    note: 'Malware, phishing, C2 e golpes',
+    note: 'Malware, phishing, C2 e golpes (gera alertas)',
+    category: 'threat' as const,
   },
 ]
 
@@ -46,9 +47,13 @@ function ListsCard() {
     refetchIntervalInBackground: true,
   })
   const set = (data: ListStatus[]) => qc.setQueryData(['lists'], data)
-  const add = useMutation({ mutationFn: (b: { name: string; url: string }) => api<ListStatus[]>('/api/lists', { method: 'POST', body: b }), onSuccess: set })
+  const add = useMutation({
+    mutationFn: (b: { name: string; url: string; category?: string }) => api<ListStatus[]>('/api/lists', { method: 'POST', body: b }),
+    onSuccess: set,
+  })
   const patch = useMutation({
-    mutationFn: ({ id, enabled }: { id: number; enabled: boolean }) => api<ListStatus[]>(`/api/lists/${id}`, { method: 'PATCH', body: { enabled } }),
+    mutationFn: ({ id, ...body }: { id: number; enabled?: boolean; category?: string }) =>
+      api<ListStatus[]>(`/api/lists/${id}`, { method: 'PATCH', body }),
     onSuccess: set,
   })
   const del = useMutation({ mutationFn: (id: number) => api<ListStatus[]>(`/api/lists/${id}`, { method: 'DELETE' }), onSuccess: set })
@@ -80,6 +85,7 @@ function ListsCard() {
           <thead className="text-left text-xs text-muted">
             <tr className="border-y border-line">
               <th className="px-4 py-2.5 font-medium">Lista</th>
+              <th className="px-3 py-2.5 font-medium">Tipo</th>
               <th className="px-3 py-2.5 text-right font-medium">Regras</th>
               <th className="px-3 py-2.5 font-medium">Atualizada</th>
               <th className="px-3 py-2.5 font-medium">Situação</th>
@@ -95,6 +101,22 @@ function ListsCard() {
                   <span className="block truncate font-mono text-[11px] text-muted" title={l.url}>
                     {l.url}
                   </span>
+                </td>
+                <td className="px-3 py-2.5">
+                  {l.fixed ? (
+                    <StatusBadge tone={l.category === 'threat' ? 'critical' : 'neutral'}>{l.category === 'threat' ? 'Ameaças' : 'Anúncios'}</StatusBadge>
+                  ) : (
+                    <Select
+                      label={`Tipo de ${l.name}`}
+                      value={l.category}
+                      onChange={(category) => l.id && patch.mutate({ id: l.id, category })}
+                      className="h-8 text-xs"
+                      options={[
+                        { value: '', label: 'Anúncios e rastreio' },
+                        { value: 'threat', label: 'Ameaças (alerta)' },
+                      ]}
+                    />
+                  )}
                 </td>
                 <td className="tabular px-3 py-2.5 text-right text-ink-2">{l.enabled ? fmtInt(l.rules) : '—'}</td>
                 <td className="px-3 py-2.5 text-xs whitespace-nowrap text-ink-2">{l.updated_at ? ago(l.updated_at) : '—'}</td>
@@ -164,7 +186,7 @@ function ListsCard() {
             .map((s) => (
               <button
                 key={s.url}
-                onClick={() => add.mutate({ name: s.name, url: s.url })}
+                onClick={() => add.mutate({ name: s.name, url: s.url, category: 'category' in s ? s.category : '' })}
                 className="rounded-lg border border-dashed border-line-strong px-3 py-1.5 text-left text-xs hover:border-accent"
               >
                 <span className="font-medium text-ink">+ {s.name}</span>
@@ -281,12 +303,18 @@ function TestCard() {
               {r.rule ? (
                 <>
                   Regra: <code className="font-mono text-ink">{r.rule}</code>{' '}
-                  <span className="text-muted">({r.source === 'client' ? 'do dispositivo' : 'global'})</span>
+                  <span className="text-muted">
+                    ({r.source === 'client' ? 'do dispositivo' : r.source === 'nrd' ? 'recém-registrado' : 'global'})
+                  </span>
                 </>
               ) : (
                 'Nenhuma regra casou: a consulta segue para o upstream.'
               )}
             </p>
+            {r.category === 'threat' && <p className="text-critical-ink">Está numa lista de ameaças: acessos geram alerta de segurança.</p>}
+            {r.registered_days_ago !== undefined && (
+              <p className="text-muted">Domínio registrado há {fmtInt(r.registered_days_ago)} dias (RDAP).</p>
+            )}
             {r.client?.skip_global_lists && <p className="text-muted">Este dispositivo não usa as listas globais.</p>}
           </div>
         )}

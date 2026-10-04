@@ -145,3 +145,26 @@ func TestStartRemovesStaleDownloads(t *testing.T) {
 		t.Error("o temporário de download interrompido deveria ter sido apagado")
 	}
 }
+
+func TestThreatCategory(t *testing.T) {
+	b := NewBuilder()
+	b.AddList(strings.NewReader("0.0.0.0 ads.exemplo.com\n"))
+	b.AddThreatList(strings.NewReader("||c2.malware.test^\n@@||ok.malware.test^\n"))
+	b.AddLine("ads2.exemplo.com", false)
+	m := b.Build()
+	if r := m.Match("x.c2.malware.test"); r.Verdict != Blocked || r.Category != CategoryThreat {
+		t.Errorf("ameaça = %+v", r)
+	}
+	if r := m.Match("ads.exemplo.com"); r.Verdict != Blocked || r.Category != "" {
+		t.Errorf("anúncio = %+v", r)
+	}
+	if r := m.Match("ads2.exemplo.com"); r.Category != "" {
+		t.Errorf("depois da lista de ameaças, o modo volta ao normal: %+v", r)
+	}
+	if r := m.Match("ok.malware.test"); r.Verdict != Allowed {
+		t.Errorf("exceção em lista de ameaças vale: %+v", r)
+	}
+	if blk, _ := m.Rules(); blk != 3 {
+		t.Errorf("regras = %d", blk)
+	}
+}

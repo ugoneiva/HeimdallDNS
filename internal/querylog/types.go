@@ -22,6 +22,7 @@ type Entry struct {
 	Status     string    `json:"status"`
 	Rcode      string    `json:"rcode"`
 	Rule       string    `json:"rule,omitempty"`
+	Category   string    `json:"category,omitempty"`
 	Upstream   string    `json:"upstream,omitempty"`
 	DurationMS float64   `json:"duration_ms"`
 }
@@ -34,7 +35,7 @@ func fromEvent(e server.Event) Entry {
 	return Entry{
 		Time: e.Time, ClientIP: ip, ClientID: e.ClientID, ClientName: e.Display,
 		Name: strings.TrimSuffix(e.Name, "."), Type: e.Type, Status: e.Status, Rcode: e.Rcode,
-		Rule: e.Rule, Upstream: e.Upstream,
+		Rule: e.Rule, Category: e.Category, Upstream: e.Upstream,
 		DurationMS: float64(e.Duration.Microseconds()) / 1000,
 	}
 }

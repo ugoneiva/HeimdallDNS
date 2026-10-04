@@ -32,15 +32,16 @@ func (s *Store) SetJSON(key string, v any) error {
 
 // List é uma lista de bloqueio cadastrada pela interface.
 type List struct {
-	ID      int64     `json:"id"`
-	Name    string    `json:"name"`
-	URL     string    `json:"url"`
-	Enabled bool      `json:"enabled"`
-	Created time.Time `json:"created"`
+	ID       int64     `json:"id"`
+	Name     string    `json:"name"`
+	URL      string    `json:"url"`
+	Enabled  bool      `json:"enabled"`
+	Category string    `json:"category"`
+	Created  time.Time `json:"created"`
 }
 
 func (s *Store) Lists() ([]List, error) {
-	rows, err := s.db.Query(`SELECT id, name, url, enabled, created FROM blocklists ORDER BY id`)
+	rows, err := s.db.Query(`SELECT id, name, url, enabled, category, created FROM blocklists ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +52,7 @@ func (s *Store) Lists() ([]List, error) {
 			l       List
 			created int64
 		)
-		if err := rows.Scan(&l.ID, &l.Name, &l.URL, &l.Enabled, &created); err != nil {
+		if err := rows.Scan(&l.ID, &l.Name, &l.URL, &l.Enabled, &l.Category, &created); err != nil {
 			return nil, err
 		}
 		l.Created = time.Unix(created, 0)
@@ -60,19 +61,19 @@ func (s *Store) Lists() ([]List, error) {
 	return out, rows.Err()
 }
 
-func (s *Store) AddList(name, url string) (int64, error) {
-	res, err := s.db.Exec(`INSERT INTO blocklists (name, url, enabled, created) VALUES (?, ?, 1, ?)`,
-		name, url, time.Now().Unix())
+func (s *Store) AddList(name, url, category string) (int64, error) {
+	res, err := s.db.Exec(`INSERT INTO blocklists (name, url, enabled, category, created) VALUES (?, ?, 1, ?, ?)`,
+		name, url, category, time.Now().Unix())
 	if err != nil {
 		return 0, err
 	}
 	return res.LastInsertId()
 }
 
-// UpdateList altera nome e/ou estado; devolve false se a lista não existir.
-func (s *Store) UpdateList(id int64, name *string, enabled *bool) (bool, error) {
-	res, err := s.db.Exec(`UPDATE blocklists SET name = COALESCE(?, name), enabled = COALESCE(?, enabled) WHERE id = ?`,
-		name, enabled, id)
+// UpdateList altera nome, estado e/ou categoria; devolve false se a lista não existir.
+func (s *Store) UpdateList(id int64, name *string, enabled *bool, category *string) (bool, error) {
+	res, err := s.db.Exec(`UPDATE blocklists SET name = COALESCE(?, name), enabled = COALESCE(?, enabled),
+		category = COALESCE(?, category) WHERE id = ?`, name, enabled, category, id)
 	if err != nil {
 		return false, err
 	}

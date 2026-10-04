@@ -87,6 +87,32 @@ var migrations = []string{
 		created    INTEGER NOT NULL,
 		expires    INTEGER NOT NULL
 	) WITHOUT ROWID;`,
+
+	`ALTER TABLE blocklists ADD COLUMN category TEXT NOT NULL DEFAULT '';
+
+	CREATE TABLE security_events (
+		id          INTEGER PRIMARY KEY,
+		first_seen  INTEGER NOT NULL, -- Unix em ms
+		last_seen   INTEGER NOT NULL,
+		count       INTEGER NOT NULL DEFAULT 1,
+		kind        TEXT NOT NULL,
+		severity    TEXT NOT NULL,
+		client_id   TEXT NOT NULL DEFAULT '',
+		client_ip   TEXT NOT NULL DEFAULT '',
+		domain      TEXT NOT NULL DEFAULT '',
+		summary     TEXT NOT NULL,
+		details     TEXT NOT NULL DEFAULT '{}',
+		status      TEXT NOT NULL DEFAULT 'open'
+	);
+	CREATE INDEX security_events_last ON security_events(last_seen);
+	CREATE INDEX security_events_dedup ON security_events(kind, client_id, domain, last_seen);
+
+	CREATE TABLE domain_age (
+		domain     TEXT PRIMARY KEY,  -- domínio registrável (eTLD+1)
+		registered INTEGER NOT NULL,  -- Unix; 0 = desconhecido
+		checked    INTEGER NOT NULL,
+		source     TEXT NOT NULL DEFAULT ''
+	) WITHOUT ROWID;`,
 }
 
 type Store struct {

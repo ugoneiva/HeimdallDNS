@@ -265,6 +265,8 @@ function QueryTable({ rows, live, empty, onEnd }: {
                       </span>
                       {e.rule && (
                         <span className="block truncate text-[11px] text-muted" title={e.rule}>
+                          {e.category === 'threat' && <strong className="text-critical-ink">ameaça · </strong>}
+                          {e.category === 'nrd' && <strong className="text-ink-2">recém-registrado · </strong>}
                           {e.rule}
                         </span>
                       )}

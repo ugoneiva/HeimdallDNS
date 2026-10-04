@@ -29,7 +29,7 @@ func LoadUserFilter(st *store.Store, f *filter.Manager) error {
 	}
 	lists := make([]filter.ListSpec, len(rows))
 	for i, l := range rows {
-		lists[i] = filter.ListSpec{ID: l.ID, Name: l.Name, URL: l.URL, Enabled: l.Enabled}
+		lists[i] = filter.ListSpec{ID: l.ID, Name: l.Name, URL: l.URL, Enabled: l.Enabled, Category: l.Category}
 	}
 	var allow, deny []string
 	if _, err := st.GetJSON(allowKey, &allow); err != nil {
@@ -135,6 +135,13 @@ func (a *api) quickRule(w http.ResponseWriter, r *http.Request) {
 	a.getRules(w, r)
 }
 
+func validCategory(c string) error {
+	if c != "" && c != filter.CategoryThreat {
+		return errors.New(`category: use "" (anúncios e rastreadores) ou "threat" (ameaças)`)
+	}
+	return nil
+}
+
 func validListURL(raw string) error {
 	if strings.HasPrefix(raw, "/") && filepath.IsAbs(raw) {
 		return nil
@@ -148,13 +155,18 @@ func validListURL(raw string) error {
 
 func (a *api) addList(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Name string `json:"name"`
-		URL  string `json:"url"`
+		Name     string `json:"name"`
+		URL      string `json:"url"`
+		Category string `json:"category"`
 	}
 	if !readJSON(w, r, &body) {
 		return
 	}
 	body.Name, body.URL = strings.TrimSpace(body.Name), strings.TrimSpace(body.URL)
+	if err := validCategory(body.Category); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
 	if err := validListURL(body.URL); err != nil {
 		writeErr(w, http.StatusBadRequest, err)
 		return
@@ -168,7 +180,7 @@ func (a *api) addList(w http.ResponseWriter, r *http.Request) {
 	if body.Name == "" {
 		body.Name = body.URL
 	}
-	if _, err := a.Store.AddList(body.Name, body.URL); err != nil {
+	if _, err := a.Store.AddList(body.Name, body.URL, body.Category); err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -186,13 +198,20 @@ func (a *api) patchList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Name    *string `json:"name"`
-		Enabled *bool   `json:"enabled"`
+		Name     *string `json:"name"`
+		Enabled  *bool   `json:"enabled"`
+		Category *string `json:"category"`
 	}
 	if !readJSON(w, r, &body) {
 		return
 	}
-	found, err := a.Store.UpdateList(id, body.Name, body.Enabled)
+	if body.Category != nil {
+		if err := validCategory(*body.Category); err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+	}
+	found, err := a.Store.UpdateList(id, body.Name, body.Enabled, body.Category)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
@@ -277,6 +296,20 @@ func (a *api) testDomain(w http.ResponseWriter, r *http.Request) {
 			verdict, rule, source = "blocked", global.Rule, "global"
 		case filter.Allowed:
 			rule, source = global.Rule, "global"
+		default:
+			if a.NRD != nil {
+				if r, block := a.NRD.Block(name); block {
+					verdict, rule, source = "blocked", r, "nrd"
+				}
+			}
+		}
+	}
+	if global.Category != "" {
+		out["category"] = global.Category
+	}
+	if a.NRD != nil {
+		if age, ok := a.NRD.Age(name); ok {
+			out["registered_days_ago"] = int(age.Hours() / 24)
 		}
 	}
 	out["verdict"], out["rule"], out["source"] = verdict, rule, source

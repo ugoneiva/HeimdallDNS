@@ -2,7 +2,7 @@
 
 Servidor DNS com filtro de bloqueio, no estilo do Pi-hole, escrito em Go, com funções mais avançadas: radar de dispositivos, isolamento por cliente e dashboard em tempo real.
 
-> **Estado:** em desenvolvimento. MVP completo: motor DNS, radar de dispositivos, histórico, log ao vivo e painel web.
+> **Estado:** em desenvolvimento. MVP completo (motor DNS, radar, histórico, log ao vivo, painel web) e detecções de segurança com exportação para o Wazuh.
 
 ## O que já funciona
 
@@ -92,6 +92,27 @@ Esqueceu a senha? `sudo heimdalldns passwd`.
 
 As listas e regras criadas pelo painel ficam no banco e se somam às do arquivo de configuração. As do arquivo aparecem no painel só para leitura.
 
+### Segurança
+
+| Detecção | Como funciona | Gravidade |
+|---|---|---|
+| **Domínio malicioso bloqueado** | Listas marcadas como `category: threat` (por exemplo, HaGeZi Threat Intelligence): o bloqueio vira alerta | Alta |
+| **Malware com DGA** | Um dispositivo consulta 10 ou mais domínios com cara de gerados por algoritmo que **não existem** (NXDOMAIN) em 10 min: o padrão de malware procurando o servidor de comando | Alta |
+| **Túnel DNS** | Em 5 min, 50 ou mais subdomínios únicos de média ≥ 20 caracteres sob o mesmo domínio, ou rajada de TXT | Alta (crítica com os dois) |
+| **Domínio recém-registrado** | Data de registro consultada por **RDAP direto no registro do TLD** (mapa oficial da IANA), uma vez por domínio, com cache. Modo alerta ou bloqueio | Média (alta se tiver menos de 7 dias) |
+| **Dispositivo novo** | Aparelho desconhecido na rede. Avisa só depois de procurar o MAC, para um aparelho conhecido que trocou de IP não parecer novo | Baixa |
+
+Como as detecções se comportam:
+- **Deduplicação:** o mesmo alerta (tipo, dispositivo e domínio) em 1 hora soma na contagem em vez de criar linhas.
+- **Isolamento automático** (opcional, por tipo): contém o dispositivo na hora. O alerta registra que o isolamento foi automático.
+- **Exceções:** domínios ignorados podem ser cadastrados pelo painel. CDNs, nuvens e serviços de reputação por DNS (antivírus, listas de spam) já são ignorados no túnel DNS.
+- **Exportação:** JSON por linha (`export.file`) e/ou syslog RFC 5424 (`export.syslog`), opcionalmente com as consultas. Regras do Wazuh prontas em [`deploy/wazuh/`](deploy/wazuh/README.md).
+
+Limites conhecidos:
+- **DGA:** a detecção é heurística, não pega DGA "de dicionário" (que junta palavras reais) e depende dos NXDOMAIN.
+- **Domínio recém-registrado:** no modo bloqueio, o **primeiro** acesso a um domínio ainda desconhecido passa enquanto a data é consultada.
+- **TLDs sem RDAP:** ficam sem idade.
+
 ### API e linha de comando
 
 API REST em `127.0.0.1:8053`, com token. Por padrão o token é gerado em `<data_dir>/api.token`.
@@ -120,6 +141,9 @@ heimdalldns status
 | `GET /api/rules` · `PUT /api/rules` · `POST /api/rules/quick` | regras próprias globais; `quick` bloqueia/libera um domínio |
 | `GET /api/filter/test?name=&client=` | qual regra decide um domínio (global ou para um dispositivo) |
 | `POST /api/auth/password` | troca a senha do painel (com o token, não pede a atual) |
+| `GET /api/security/events` · `GET /api/security/summary` | alertas (filtros `status`, `kind`, `client`, `range`) e contagens |
+| `POST /api/security/events/{id}/ack` · `…/reopen` | reconhece ou reabre (`{id}` = `all` reconhece todos) |
+| `GET`/`PUT /api/security/settings` · `POST /api/security/ignore` | detecções, isolamento automático e domínios ignorados |
 | `GET /api/queries` | histórico: `range`/`from`/`to`, `client`, `status`, `type`, `q`, `limit`, `before` (paginação) |
 | `GET /api/queries/live` | **SSE** do log ao vivo, com os mesmos filtros (evento `query`; `dropped` se o navegador não acompanhar) |
 | `GET /api/stats/summary` | totais do período, % bloqueado, % cache, latência média, dispositivos ativos |
@@ -190,10 +214,15 @@ internal/upstream   DoH/DoT/DoQ, escolha do melhor e saúde
 internal/clients    radar: descoberta, MAC/fabricante, PTR, isolamento e regras
 internal/querylog   agregador, resumos, log ao vivo e tráfego por segundo
 internal/store      SQLite: clientes, consultas, resumos, retenção
+internal/detect     detecções de DGA, túnel DNS e listas de ameaças
+internal/nrd        idade dos domínios via RDAP (bootstrap da IANA)
+internal/security   alertas: deduplicação, isolamento automático, configurações
+internal/export     exportação JSON/syslog para SIEM
+internal/dnsname    domínio registrável (Public Suffix List, só regras ICANN)
 internal/api        API REST, login do painel e arquivos do painel
 internal/webui      painel compilado, embutido no binário (gerado por "make web")
 web/                código do painel: React + Vite + Tailwind + TanStack + Recharts
-deploy/             unit do systemd
+deploy/             unit do systemd e regras do Wazuh
 ```
 
 ## Desenvolvimento do painel
@@ -207,6 +236,5 @@ O painel compilado vai no repositório, então `make build` (ou `go install`) fu
 
 ## Próximas etapas
 
-1. Recursos de segurança: domínios recém-registrados, detecção de DGA e túnel DNS, exportação para o Wazuh.
-2. Servidor DoH/DoT próprio (proteção fora da rede) e DHCP opcional.
-3. Dois nós com sincronização (HA) e console multi-tenant para MSP.
+1. Servidor DoH/DoT próprio (proteção fora da rede) e DHCP opcional.
+2. Dois nós com sincronização (HA) e console multi-tenant para MSP.

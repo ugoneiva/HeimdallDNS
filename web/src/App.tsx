@@ -1,6 +1,6 @@
 import { useEffect, useState, type ComponentType } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Gauge, ListFilter, Radar as RadarIcon, ScrollText, Settings as SettingsIcon } from 'lucide-react'
+import { Gauge, ListFilter, Radar as RadarIcon, ScrollText, Settings as SettingsIcon, ShieldAlert } from 'lucide-react'
 import { api, authEvents } from './api'
 import type { AuthState } from './types'
 import { cx } from './components/ui'
@@ -11,12 +11,14 @@ import { Devices } from './pages/Devices'
 import { QueryLog } from './pages/QueryLog'
 import { Lists } from './pages/Lists'
 import { Settings } from './pages/Settings'
+import { Security, useSecuritySummary } from './pages/Security'
 
-type Page = 'overview' | 'devices' | 'queries' | 'lists' | 'settings'
+type Page = 'overview' | 'devices' | 'security' | 'queries' | 'lists' | 'settings'
 
 const nav: { page: Page; path: string; label: string; icon: ComponentType<{ className?: string }> }[] = [
   { page: 'overview', path: '', label: 'Visão geral', icon: Gauge },
   { page: 'devices', path: 'dispositivos', label: 'Dispositivos', icon: RadarIcon },
+  { page: 'security', path: 'seguranca', label: 'Segurança', icon: ShieldAlert },
   { page: 'queries', path: 'consultas', label: 'Consultas', icon: ScrollText },
   { page: 'lists', path: 'listas', label: 'Listas e regras', icon: ListFilter },
   { page: 'settings', path: 'configuracoes', label: 'Configurações', icon: SettingsIcon },
@@ -84,6 +86,9 @@ export default function App() {
 function Shell({ version, onLogout }: { version: string; onLogout: () => void }) {
   const { page, arg } = useRoute()
   const current = nav.find((n) => n.page === page)!
+  const sec = useSecuritySummary()
+  const openAlerts = sec.data?.open_total ?? 0
+  const urgent = (sec.data?.open.critical ?? 0) + (sec.data?.open.high ?? 0) > 0
 
   return (
     <div className="min-h-full lg:grid lg:grid-cols-[232px_1fr]">
@@ -111,6 +116,17 @@ function Shell({ version, onLogout }: { version: string; onLogout: () => void })
               >
                 <Icon className="size-4" />
                 {n.label}
+                {n.page === 'security' && openAlerts > 0 && (
+                  <span
+                    className={cx(
+                      'ml-auto rounded-full px-1.5 text-[10px] leading-4 font-semibold',
+                      urgent ? 'bg-critical text-white' : 'bg-surface-3 text-ink-2',
+                    )}
+                    aria-label={`${openAlerts} alertas abertos`}
+                  >
+                    {openAlerts > 99 ? '99+' : openAlerts}
+                  </span>
+                )}
               </a>
             )
           })}
@@ -122,8 +138,9 @@ function Shell({ version, onLogout }: { version: string; onLogout: () => void })
         <div className="bg-grid pointer-events-none absolute inset-x-0 top-0 h-64" aria-hidden />
         <div className="relative mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
           <h1 className="mb-5 text-xl font-semibold tracking-tight text-ink">{current.label}</h1>
-          {page === 'overview' && <Overview onOpenDevice={(id) => go('devices', id)} />}
+          {page === 'overview' && <Overview onOpenDevice={(id) => go('devices', id)} onOpenSecurity={() => go('security')} />}
           {page === 'devices' && <Devices openId={arg} onOpen={(id) => go('devices', id)} />}
+          {page === 'security' && <Security onOpenDevice={(id) => go('devices', id)} />}
           {page === 'queries' && <QueryLog />}
           {page === 'lists' && <Lists />}
           {page === 'settings' && <Settings onLogout={onLogout} />}

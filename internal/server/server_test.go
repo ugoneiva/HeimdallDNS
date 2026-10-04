@@ -295,3 +295,62 @@ func TestClientRulesInServer(t *testing.T) {
 		t.Errorf("sem listas globais: %s", ip)
 	}
 }
+
+type fakeNRD map[string]bool
+
+func (f fakeNRD) Block(name string) (string, bool) {
+	if f[strings.TrimSuffix(name, ".")] {
+		return "domínio registrado há 3 dias", true
+	}
+	return "", false
+}
+
+func TestNRDBlockAndThreatCategory(t *testing.T) {
+	addr, n := fakeUpstream(t)
+	ups, _ := upstream.New(upstream.Options{Servers: []string{addr}, Mode: upstream.ModeFastest, Timeout: 2 * time.Second})
+	t.Cleanup(func() { ups.Close() })
+	b := filter.NewBuilder()
+	b.AddThreatList(strings.NewReader("||c2.ruim.com^\n"))
+	b.AddLine("@@||liberado.novo.com^", false)
+	mt := b.Build()
+	evc := make(chan Event, 10)
+	srv := New(Options{
+		Listen: []string{"127.0.0.1:0"}, Allowed: []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")},
+		BlockMode: config.BlockNull, BlockTTL: 10, Cache: cache.New(cache.Options{Size: 100}),
+		Filter: func() *filter.Matcher { return mt }, Upstream: ups,
+		NRD:     fakeNRD{"jovem.com": true, "liberado.novo.com": true},
+		OnQuery: func(e Event) { evc <- e },
+	})
+	if err := srv.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { srv.Shutdown(t.Context()) })
+	a := srv.Addrs()[0].String()
+	next := func() Event {
+		select {
+		case e := <-evc:
+			return e
+		case <-time.After(2 * time.Second):
+			t.Fatal("evento não chegou")
+		}
+		return Event{}
+	}
+
+	if ip := firstA(t, query(t, a, "jovem.com", dns.TypeA, "udp")); ip != "0.0.0.0" {
+		t.Errorf("recém-registrado = %s", ip)
+	}
+	if e := next(); e.Category != CategoryNRD || e.Status != StatusBlocked {
+		t.Errorf("evento NRD = %+v", e)
+	}
+	if ip := firstA(t, query(t, a, "liberado.novo.com", dns.TypeA, "udp")); ip != "1.2.3.4" {
+		t.Errorf("exceção vence o bloqueio de recém-registrado: %s", ip)
+	}
+	next()
+	query(t, a, "x.c2.ruim.com", dns.TypeA, "udp")
+	if e := next(); e.Category != filter.CategoryThreat {
+		t.Errorf("evento de ameaça = %+v", e)
+	}
+	if n.Load() != 1 {
+		t.Errorf("upstream = %d (só a liberada vai)", n.Load())
+	}
+}

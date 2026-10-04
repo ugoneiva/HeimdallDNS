@@ -75,3 +75,18 @@ export const modeLabel: Record<string, string> = {
   null: 'Endereço nulo (0.0.0.0)',
   drop: 'Não responder (drop)',
 }
+
+export const kindLabel: Record<string, string> = {
+  threat_blocked: 'Domínio malicioso bloqueado',
+  dga: 'Possível malware (DGA)',
+  dns_tunnel: 'Possível túnel DNS',
+  nrd: 'Domínio recém-registrado',
+  new_device: 'Dispositivo novo',
+}
+
+export const severityLabel: Record<string, string> = {
+  critical: 'Crítica',
+  high: 'Alta',
+  medium: 'Média',
+  low: 'Baixa',
+}

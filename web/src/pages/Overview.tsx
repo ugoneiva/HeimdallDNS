@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { Activity, Server } from 'lucide-react'
+import { Activity, Server, ShieldAlert } from 'lucide-react'
 import { api, qs } from '../api'
 import type { Ranked, Second, Status, Summary, Timeseries } from '../types'
 import { useSSE } from '../lib/sse'
 import { fmtCompact, fmtInt, fmtMs, fmtPct } from '../lib/format'
 import { Card, Segmented, StatusBadge, cx } from '../components/ui'
 import { LiveTrafficChart, RankList, TrafficHistoryChart } from '../components/charts'
+import { SeverityBadge, useSecuritySummary } from './Security'
 
 export type Range = '1h' | '24h' | '7d' | '30d'
 
@@ -118,7 +119,37 @@ function Upstreams() {
   )
 }
 
-export function Overview({ onOpenDevice }: { onOpenDevice: (id: string) => void }) {
+function SecurityStrip({ onOpen }: { onOpen: () => void }) {
+  const { data } = useSecuritySummary()
+  if (!data) return null
+  const total = data.open_total
+  return (
+    <button
+      onClick={onOpen}
+      className={cx(
+        'flex w-full flex-wrap items-center gap-3 rounded-xl border px-4 py-3 text-left transition-colors hover:bg-surface-2',
+        total ? 'border-critical/40 bg-critical-soft' : 'border-line bg-surface',
+      )}
+    >
+      <ShieldAlert className={cx('size-5', total ? 'text-critical-ink' : 'text-good')} aria-hidden />
+      <span className="text-sm font-medium text-ink">
+        {total ? `${fmtInt(total)} alerta${total > 1 ? 's' : ''} de segurança em aberto` : 'Nenhum alerta de segurança em aberto'}
+      </span>
+      <span className="flex flex-wrap gap-1.5">
+        {(['critical', 'high', 'medium', 'low'] as const)
+          .filter((s) => data.open[s])
+          .map((s) => (
+            <span key={s} className="flex items-center gap-1 text-xs text-ink-2">
+              <SeverityBadge sev={s} /> {data.open[s]}
+            </span>
+          ))}
+      </span>
+      <span className="ml-auto text-xs text-accent">ver alertas →</span>
+    </button>
+  )
+}
+
+export function Overview({ onOpenDevice, onOpenSecurity }: { onOpenDevice: (id: string) => void; onOpenSecurity: () => void }) {
   const [range, setRange] = useState<Range>('24h')
   const opts = { placeholderData: keepPreviousData, refetchInterval: 15_000 }
   const sum = useQuery({ queryKey: ['summary', range], queryFn: () => api<Summary>(`/api/stats/summary${qs({ range })}`), ...opts })
@@ -131,6 +162,7 @@ export function Overview({ onOpenDevice }: { onOpenDevice: (id: string) => void 
 
   return (
     <div className="space-y-5">
+      <SecurityStrip onOpen={onOpenSecurity} />
       <LiveTraffic />
 
       {/* Filtro único, acima de tudo o que ele afeta. */}

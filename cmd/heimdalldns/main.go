@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -25,8 +26,12 @@ import (
 	"github.com/ugoneiva/HeimdallDNS/internal/cache"
 	"github.com/ugoneiva/HeimdallDNS/internal/clients"
 	"github.com/ugoneiva/HeimdallDNS/internal/config"
+	"github.com/ugoneiva/HeimdallDNS/internal/detect"
+	"github.com/ugoneiva/HeimdallDNS/internal/export"
 	"github.com/ugoneiva/HeimdallDNS/internal/filter"
+	"github.com/ugoneiva/HeimdallDNS/internal/nrd"
 	"github.com/ugoneiva/HeimdallDNS/internal/querylog"
+	"github.com/ugoneiva/HeimdallDNS/internal/security"
 	"github.com/ugoneiva/HeimdallDNS/internal/server"
 	"github.com/ugoneiva/HeimdallDNS/internal/store"
 	"github.com/ugoneiva/HeimdallDNS/internal/upstream"
@@ -128,7 +133,7 @@ func runServer() error {
 
 	lists := make([]filter.ListSpec, len(cfg.Filter.Lists))
 	for i, l := range cfg.Filter.Lists {
-		lists[i] = filter.ListSpec{Name: l.Name, URL: l.URL, Enabled: l.IsEnabled()}
+		lists[i] = filter.ListSpec{Name: l.Name, URL: l.URL, Enabled: l.IsEnabled(), Category: l.Category}
 	}
 	flt := filter.NewManager(filter.ManagerOptions{
 		Lists:    lists,
@@ -143,10 +148,75 @@ func runServer() error {
 	}
 	flt.Start(ctx)
 
-	reg, err := newRegistry(cfg, db, log.With("componente", "radar"))
+	// O alerta de dispositivo novo precisa do gerente de segurança, criado logo abaixo.
+	var sec *security.Manager
+	reg, err := newRegistry(cfg, db, log.With("componente", "radar"), func(id string, ip netip.Addr) {
+		if sec == nil || !sec.Settings().NewDevice {
+			return
+		}
+		sec.Raise(security.Alert{
+			Kind: security.KindNewDevice, Severity: security.SevLow, ClientID: id, ClientIP: ip.String(),
+			Summary: "Dispositivo novo na rede: " + sec.ClientName(id, ip.String()),
+		})
+	})
 	if err != nil {
 		return err
 	}
+
+	exp, err := export.New(export.Options{
+		File: cfg.Export.File, Syslog: cfg.Export.Syslog, Queries: cfg.Export.Queries,
+		Logger: log.With("componente", "exportacao"),
+	})
+	if err != nil {
+		return err
+	}
+	expDone := make(chan struct{})
+	go func() {
+		exp.Run(ctx)
+		close(expDone)
+	}()
+	secOpts := security.Options{
+		Store: db, Clients: reg, Logger: log.With("componente", "seguranca"),
+		Defaults: security.Settings{
+			DGA: cfg.Security.DGA, Tunnel: cfg.Security.Tunnel, NRD: cfg.Security.NRD,
+			NRDAction: cfg.Security.NRDAction, NRDMaxDays: max(1, int(cfg.Security.NRDMaxAge.Hours()/24)),
+			NewDevice: cfg.Security.NewDeviceAlerts, AutoIsolate: cfg.Security.AutoIsolate,
+			Ignore: cfg.Security.IgnoreDomains,
+		},
+	}
+	if exp.Enabled() {
+		secOpts.Exporter = exp
+		log.Info("exportação para SIEM ligada", "arquivo", cfg.Export.File, "syslog", cfg.Export.Syslog, "consultas", cfg.Export.Queries)
+	}
+	if sec, err = security.New(secOpts); err != nil {
+		return err
+	}
+	go func() {
+		sec.Purge()
+		t := time.NewTicker(24 * time.Hour)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				sec.Purge()
+			}
+		}
+	}()
+	nrdCheck, err := nrd.New(nrd.Options{
+		Store: db, DataDir: cfg.DataDir, Settings: sec.Settings, Raise: sec.Raise, Name: sec.ClientName,
+		Logger: log.With("componente", "idade-dominios"),
+	})
+	if err != nil {
+		return err
+	}
+	go nrdCheck.Run(ctx)
+	det := detect.New(detect.Options{
+		Settings: sec.Settings, Raise: sec.Raise, Name: sec.ClientName, NRD: nrdCheck,
+		Logger: log.With("componente", "deteccao"),
+	})
+	go det.Run(ctx)
 	regDone := make(chan struct{})
 	go func() {
 		reg.Run(ctx, cfg.Clients.NeighborInterval)
@@ -188,9 +258,10 @@ func runServer() error {
 		Filter:       flt.Matcher,
 		Upstream:     ups,
 		Clients:      reg,
+		NRD:          nrdCheck,
 		Timeout:      cfg.Upstream.Timeout + time.Second,
 		Logger:       log.With("componente", "dns"),
-		OnQuery:      onQuery(qlog, log, cfg.Log.Queries),
+		OnQuery:      onQuery(qlog, det, exp, log, cfg.Log.Queries),
 	})
 	if err := srv.Start(); err != nil {
 		return err
@@ -211,7 +282,7 @@ func runServer() error {
 			Handler: api.New(api.Deps{
 				Context: ctx, Token: token, Version: version, Started: started,
 				Server: srv, Cache: dnsCache, Upstream: ups, Filter: flt, Clients: reg,
-				Store: db, Log: qlog, UI: webui.FS(), Secure: tls,
+				Store: db, Log: qlog, Security: sec, NRD: nrdCheck, UI: webui.FS(), Secure: tls,
 				Logger: log.With("componente", "api"),
 			}),
 			ReadHeaderTimeout: 10 * time.Second,
@@ -252,6 +323,7 @@ func runServer() error {
 			cancel()
 			<-regDone     // grava os clientes
 			<-qlog.Done() // grava o histórico pendente
+			<-expDone     // esvazia a fila de exportação
 			c := srv.Counters()
 			log.Info("consultas atendidas", "total", c.Total, "bloqueadas", c.Blocked, "isoladas", c.Isolated, "cache", c.Cached)
 			return nil
@@ -259,11 +331,12 @@ func runServer() error {
 	}
 }
 
-func newRegistry(cfg *config.Config, db *store.Store, log *slog.Logger) (*clients.Registry, error) {
+func newRegistry(cfg *config.Config, db *store.Store, log *slog.Logger, onNew func(string, netip.Addr)) (*clients.Registry, error) {
 	opts := clients.Options{
 		Store:       db,
 		Neighbors:   clients.Neighbors,
 		IsolateMode: cfg.Clients.IsolateMode,
+		OnNew:       onNew,
 		Logger:      log,
 	}
 	switch ptr := cfg.Clients.PTRServer; ptr {
@@ -308,13 +381,16 @@ func apiToken(cfg *config.Config) (string, error) {
 	return t, nil
 }
 
-// onQuery manda cada consulta para o histórico e, se pedido, para o log.
-func onQuery(qlog *querylog.Recorder, log *slog.Logger, logQueries bool) func(server.Event) {
-	if !logQueries {
-		return qlog.Record
-	}
+// onQuery manda cada consulta para o histórico, as detecções, a exportação
+// e, se pedido, para o log. Nenhum deles bloqueia.
+func onQuery(qlog *querylog.Recorder, det *detect.Detector, exp *export.Exporter, log *slog.Logger, logQueries bool) func(server.Event) {
 	return func(e server.Event) {
 		qlog.Record(e)
+		det.Observe(e)
+		exp.Query(e)
+		if !logQueries {
+			return
+		}
 		log.Info("consulta", "cliente", e.Client, "nome_cliente", e.Display, "nome", e.Name, "tipo", e.Type,
 			"status", e.Status, "rcode", e.Rcode, "regra", e.Rule, "upstream", e.Upstream,
 			"tempo", e.Duration.Round(time.Microsecond))

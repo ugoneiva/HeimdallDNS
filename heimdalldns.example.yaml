@@ -39,6 +39,11 @@ filter:
     - name: HaGeZi Pro
       url: https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.txt
       enabled: false
+    # category: threat = lista de ameaças; um bloqueio por ela vira alerta de segurança.
+    - name: HaGeZi Threat Intelligence
+      url: https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/tif.txt
+      category: threat
+      enabled: false
   # Regras próprias: um domínio simples vale para ele e todos os subdomínios.
   deny: []
   allow: []
@@ -62,6 +67,24 @@ api:
   token: ""                 # vazio = gerado em <data_dir>/api.token
   tls_cert: ""              # ex.: /etc/heimdalldns/cert.pem
   tls_key: ""
+
+# Detecções de segurança. Estes são os valores iniciais: depois que o painel
+# salvar (Segurança → Detecções), valem os do painel.
+security:
+  dga: true                 # vários nomes aleatórios inexistentes: malware procurando o C2
+  tunnel: true              # muitos subdomínios longos e únicos: túnel/exfiltração por DNS
+  nrd: true                 # idade do domínio via RDAP (o nome do domínio vai ao registro dele)
+  nrd_action: alert         # alert ou block
+  nrd_max_age: 720h         # "recém-registrado" = até 30 dias
+  new_device_alerts: true
+  auto_isolate: []          # threat_blocked, dga, dns_tunnel, nrd: isola o dispositivo na hora
+  ignore_domains: []
+
+# Exportação para SIEM (Wazuh etc.). Regras prontas em deploy/wazuh/.
+export:
+  file: ""                  # ex.: /var/log/heimdalldns/events.json (JSON por linha)
+  syslog: ""                # ex.: udp://10.0.0.5:514
+  queries: none             # além dos alertas: none, blocked ou all
 
 # Histórico de consultas.
 history:

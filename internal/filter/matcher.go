@@ -30,9 +30,14 @@ func (v Verdict) String() string {
 // Result diz o veredito e a regra responsável, para a pergunta
 // "por que este domínio foi bloqueado?".
 type Result struct {
-	Verdict Verdict
-	Rule    string
+	Verdict  Verdict
+	Rule     string
+	Category string // CategoryThreat quando o bloqueio veio de uma lista de ameaças
 }
+
+// CategoryThreat marca listas de ameaças (malware, phishing, C2): um bloqueio
+// por elas vira alerta de segurança, não só "anúncio bloqueado".
+const CategoryThreat = "threat"
 
 type ruleSet struct {
 	exact, wild domainSet
@@ -59,7 +64,7 @@ func (r *ruleSet) size() int { return r.exact.Len() + r.wild.Len() + len(r.regex
 // Matcher é imutável: o Manager monta um novo e troca o ponteiro atomicamente,
 // então as consultas nunca esperam por lock.
 type Matcher struct {
-	block, allow ruleSet
+	block, allow, threat ruleSet
 }
 
 // Match recebe o nome como vem na pergunta DNS (com ou sem ponto final).
@@ -70,6 +75,9 @@ func (m *Matcher) Match(name string) Result {
 	d := strings.ToLower(strings.TrimSuffix(name, "."))
 	if r, ok := m.allow.match(d); ok {
 		return Result{Verdict: Allowed, Rule: r}
+	}
+	if r, ok := m.threat.match(d); ok {
+		return Result{Verdict: Blocked, Rule: r, Category: CategoryThreat}
 	}
 	if r, ok := m.block.match(d); ok {
 		return Result{Verdict: Blocked, Rule: r}
@@ -82,7 +90,7 @@ func (m *Matcher) Rules() (block, allow int) {
 	if m == nil {
 		return 0, 0
 	}
-	return m.block.size(), m.allow.size()
+	return m.block.size() + m.threat.size(), m.allow.size()
 }
 
 // ListStats conta o resultado da leitura de uma lista.
@@ -95,7 +103,10 @@ type ListStats struct {
 type Builder struct {
 	blockExact, blockWild, allowExact, allowWild []string
 	blockRe, allowRe                             []*regexp.Regexp
+	threatExact, threatWild                      []string
+	threatRe                                     []*regexp.Regexp
 	seenRe                                       map[string]bool
+	threatMode                                   bool // bloqueios vão para o conjunto de ameaças
 }
 
 func NewBuilder() *Builder { return &Builder{seenRe: map[string]bool{}} }
@@ -121,9 +132,12 @@ func (b *Builder) AddLine(line string, wildcardPlain bool) lineKind {
 				return lineBad
 			}
 			b.seenRe[key] = true
-			if r.allow {
+			switch {
+			case r.allow:
 				b.allowRe = append(b.allowRe, re)
-			} else {
+			case b.threatMode:
+				b.threatRe = append(b.threatRe, re)
+			default:
 				b.blockRe = append(b.blockRe, re)
 			}
 			continue
@@ -133,6 +147,10 @@ func (b *Builder) AddLine(line string, wildcardPlain bool) lineKind {
 			b.allowWild = append(b.allowWild, r.domain)
 		case r.allow:
 			b.allowExact = append(b.allowExact, r.domain)
+		case r.wildcard && b.threatMode:
+			b.threatWild = append(b.threatWild, r.domain)
+		case b.threatMode:
+			b.threatExact = append(b.threatExact, r.domain)
 		case r.wildcard:
 			b.blockWild = append(b.blockWild, r.domain)
 		default:
@@ -140,6 +158,13 @@ func (b *Builder) AddLine(line string, wildcardPlain bool) lineKind {
 		}
 	}
 	return lineRule
+}
+
+// AddThreatList lê uma lista de ameaças: os bloqueios dela saem com CategoryThreat.
+func (b *Builder) AddThreatList(r io.Reader) (ListStats, error) {
+	b.threatMode = true
+	defer func() { b.threatMode = false }()
+	return b.AddList(r)
 }
 
 // AddList lê uma lista inteira (formato hosts, Adblock ou domínios).
@@ -160,7 +185,8 @@ func (b *Builder) AddList(r io.Reader) (ListStats, error) {
 
 func (b *Builder) Build() *Matcher {
 	return &Matcher{
-		block: ruleSet{exact: newDomainSet(b.blockExact), wild: newDomainSet(b.blockWild), regex: b.blockRe},
-		allow: ruleSet{exact: newDomainSet(b.allowExact), wild: newDomainSet(b.allowWild), regex: b.allowRe},
+		block:  ruleSet{exact: newDomainSet(b.blockExact), wild: newDomainSet(b.blockWild), regex: b.blockRe},
+		allow:  ruleSet{exact: newDomainSet(b.allowExact), wild: newDomainSet(b.allowWild), regex: b.allowRe},
+		threat: ruleSet{exact: newDomainSet(b.threatExact), wild: newDomainSet(b.threatWild), regex: b.threatRe},
 	}
 }

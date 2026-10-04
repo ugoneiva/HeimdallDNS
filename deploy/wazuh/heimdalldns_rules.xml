@@ -1,0 +1,115 @@
+<!--
+  HeimdallDNS → Wazuh. Regras para os eventos JSON exportados pelo HeimdallDNS
+  (export.file lido pelo agente, ou export.syslog recebido pelo manager).
+  IDs 112400–112499. Instalar em /var/ossec/etc/rules/heimdalldns_rules.xml.
+
+  Os campos evitam os estáticos do Wazuh ("action", "status"…): use
+  <field name="response">, <field name="result"> etc. O campo "srcip" é o IP
+  do dispositivo e vale para resposta ativa.
+-->
+<group name="heimdalldns,dns,">
+
+  <rule id="112400" level="0">
+    <decoded_as>json</decoded_as>
+    <field name="app">^heimdalldns$</field>
+    <description>HeimdallDNS: evento</description>
+  </rule>
+
+  <!-- Consultas (só chegam se export.queries = blocked ou all) -->
+  <rule id="112401" level="0">
+    <if_sid>112400</if_sid>
+    <field name="event_type">^query$</field>
+    <description>HeimdallDNS: $(client.name) consultou $(domain) ($(result))</description>
+  </rule>
+
+  <rule id="112402" level="3">
+    <if_sid>112401</if_sid>
+    <field name="result">^blocked$|^isolated$</field>
+    <description>HeimdallDNS: consulta bloqueada de $(client.name) para $(domain)</description>
+  </rule>
+
+  <!-- Alertas de segurança -->
+  <rule id="112410" level="5">
+    <if_sid>112400</if_sid>
+    <field name="event_type">^security$</field>
+    <description>HeimdallDNS: $(summary)</description>
+  </rule>
+
+  <rule id="112411" level="10">
+    <if_sid>112410</if_sid>
+    <field name="kind">^threat_blocked$</field>
+    <description>HeimdallDNS: acesso a domínio malicioso bloqueado: $(summary)</description>
+    <mitre>
+      <id>T1071.004</id>
+    </mitre>
+    <group>malware,attack,</group>
+  </rule>
+
+  <rule id="112412" level="12">
+    <if_sid>112410</if_sid>
+    <field name="kind">^dga$</field>
+    <description>HeimdallDNS: possível malware com DGA: $(summary)</description>
+    <mitre>
+      <id>T1568.002</id>
+    </mitre>
+    <group>malware,attack,</group>
+  </rule>
+
+  <rule id="112413" level="12">
+    <if_sid>112410</if_sid>
+    <field name="kind">^dns_tunnel$</field>
+    <description>HeimdallDNS: possível túnel/exfiltração por DNS: $(summary)</description>
+    <mitre>
+      <id>T1071.004</id>
+      <id>T1048</id>
+    </mitre>
+    <group>exfiltration,attack,</group>
+  </rule>
+
+  <rule id="112414" level="14">
+    <if_sid>112413</if_sid>
+    <field name="severity">^critical$</field>
+    <description>HeimdallDNS: túnel DNS com muitos subdomínios e rajada de TXT: $(summary)</description>
+    <mitre>
+      <id>T1071.004</id>
+      <id>T1048</id>
+    </mitre>
+    <group>exfiltration,attack,</group>
+  </rule>
+
+  <rule id="112415" level="7">
+    <if_sid>112410</if_sid>
+    <field name="kind">^nrd$</field>
+    <description>HeimdallDNS: domínio recém-registrado: $(summary)</description>
+    <mitre>
+      <id>T1583.001</id>
+    </mitre>
+    <group>suspicious,</group>
+  </rule>
+
+  <rule id="112416" level="10">
+    <if_sid>112415</if_sid>
+    <field name="severity">^high$</field>
+    <description>HeimdallDNS: domínio registrado há menos de 7 dias: $(summary)</description>
+    <mitre>
+      <id>T1583.001</id>
+    </mitre>
+    <group>suspicious,</group>
+  </rule>
+
+  <rule id="112417" level="4">
+    <if_sid>112410</if_sid>
+    <field name="kind">^new_device$</field>
+    <description>HeimdallDNS: $(summary)</description>
+    <group>asset_inventory,</group>
+  </rule>
+
+  <!-- O HeimdallDNS isolou o dispositivo automaticamente (vale para qualquer tipo) -->
+  <rule id="112420" level="14">
+    <if_sid>112411,112412,112413,112414,112415,112416</if_sid>
+    <field name="response">^isolated$</field>
+    <description>HeimdallDNS: dispositivo $(client.name) ($(srcip)) ISOLADO automaticamente: $(summary)</description>
+    <group>active_response,</group>
+  </rule>
+
+</group>

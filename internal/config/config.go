@@ -37,6 +37,8 @@ type Config struct {
 	Clients      Clients             `yaml:"clients"`
 	API          API                 `yaml:"api"`
 	History      History             `yaml:"history"`
+	Security     Security            `yaml:"security"`
+	Export       Export              `yaml:"export"`
 	LocalRecords map[string][]string `yaml:"local_records"`
 	DataDir      string              `yaml:"data_dir"`
 	Log          Log                 `yaml:"log"`
@@ -74,9 +76,10 @@ type Filter struct {
 }
 
 type List struct {
-	Name    string `yaml:"name"`
-	URL     string `yaml:"url"` // http(s)://, file:// ou caminho local
-	Enabled *bool  `yaml:"enabled"`
+	Name     string `yaml:"name"`
+	URL      string `yaml:"url"` // http(s)://, file:// ou caminho local
+	Enabled  *bool  `yaml:"enabled"`
+	Category string `yaml:"category"` // "" (anúncios/rastreadores) ou "threat" (ameaças: bloqueio vira alerta)
 }
 
 func (l List) IsEnabled() bool { return l.Enabled == nil || *l.Enabled }
@@ -105,6 +108,25 @@ type History struct {
 	StoreQueries   bool          `yaml:"store_queries"`   // grava cada consulta (os resumos são sempre gravados)
 	Retention      time.Duration `yaml:"retention"`       // das consultas detalhadas
 	StatsRetention time.Duration `yaml:"stats_retention"` // dos resumos por minuto/hora
+}
+
+// Security são os valores iniciais das detecções; depois de salvas pelo
+// painel, valem as do painel.
+type Security struct {
+	DGA             bool          `yaml:"dga"`
+	Tunnel          bool          `yaml:"tunnel"`
+	NRD             bool          `yaml:"nrd"`
+	NRDAction       string        `yaml:"nrd_action"` // alert ou block
+	NRDMaxAge       time.Duration `yaml:"nrd_max_age"`
+	NewDeviceAlerts bool          `yaml:"new_device_alerts"`
+	AutoIsolate     []string      `yaml:"auto_isolate"` // threat_blocked, dga, dns_tunnel, nrd
+	IgnoreDomains   []string      `yaml:"ignore_domains"`
+}
+
+type Export struct {
+	File    string `yaml:"file"`    // JSON por linha, para o agente do Wazuh
+	Syslog  string `yaml:"syslog"`  // udp://host:514 ou tcp://host:514
+	Queries string `yaml:"queries"` // none, blocked ou all (além dos alertas)
 }
 
 type Log struct {
@@ -157,6 +179,11 @@ func Default() *Config {
 			VendorDBMaxAge:   30 * 24 * time.Hour,
 		},
 		API: API{Listen: "127.0.0.1:8053"},
+		Security: Security{
+			DGA: true, Tunnel: true, NRD: true, NRDAction: "alert", NRDMaxAge: 30 * 24 * time.Hour,
+			NewDeviceAlerts: true,
+		},
+		Export: Export{Queries: "none"},
 		History: History{
 			StoreQueries:   true,
 			Retention:      7 * 24 * time.Hour,
@@ -227,6 +254,9 @@ func (c *Config) Validate() error {
 	for i, l := range c.Filter.Lists {
 		if l.URL == "" {
 			errs = append(errs, fmt.Errorf("filter.lists[%d]: url vazia", i))
+		}
+		if l.Category != "" && l.Category != "threat" {
+			errs = append(errs, fmt.Errorf(`filter.lists[%d]: category %q; use "threat" ou deixe vazio`, i, l.Category))
 		}
 	}
 	return errors.Join(errs...)

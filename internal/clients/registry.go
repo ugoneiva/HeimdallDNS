@@ -235,7 +235,10 @@ type Options struct {
 	Neighbors   func() (map[netip.Addr]string, error)             // nil = sem MAC
 	PTR         func(context.Context, netip.Addr) (string, error) // nil = sem nome reverso
 	IsolateMode string
-	Logger      *slog.Logger
+	// OnNew avisa de um dispositivo novo de verdade: só depois de procurar o MAC,
+	// para um aparelho conhecido que trocou de IP não parecer novo.
+	OnNew  func(id string, ip netip.Addr)
+	Logger *slog.Logger
 }
 
 type Registry struct {
@@ -247,6 +250,7 @@ type Registry struct {
 	byIP  map[netip.Addr]*Client
 	byMAC map[string]*Client
 
+	fresh     map[string]bool // criados e ainda não confirmados como novos (ver OnNew)
 	vendors   atomic.Pointer[OUI]
 	enrich    chan netip.Addr
 	neighMu   sync.Mutex
@@ -267,6 +271,7 @@ func NewRegistry(opts Options) (*Registry, error) {
 		byID:   map[string]*Client{},
 		byIP:   map[netip.Addr]*Client{},
 		byMAC:  map[string]*Client{},
+		fresh:  map[string]bool{},
 		enrich: make(chan netip.Addr, 1024),
 	}
 	if opts.Store == nil {
@@ -329,6 +334,11 @@ func (r *Registry) newClient(ip netip.Addr, t time.Time) *Client {
 	r.mu.Unlock()
 
 	r.log.Info("novo dispositivo", "id", c.id, "ip", ip)
+	if !ip.IsLoopback() {
+		r.mu.Lock()
+		r.fresh[c.id] = true
+		r.mu.Unlock()
+	}
 	select {
 	case r.enrich <- ip:
 	default: // fila cheia: o ciclo periódico pega depois
@@ -524,6 +534,7 @@ func (r *Registry) Run(ctx context.Context, neighEvery time.Duration) {
 			r.applyNeighbor(ip)
 			if c := r.lookupIP(ip); c != nil {
 				r.resolvePTR(ctx, c, ip)
+				r.confirmNew(c, ip)
 			}
 		case <-neigh.C:
 			r.refreshNeighbors(true)
@@ -621,6 +632,7 @@ func (r *Registry) applyNeighbor(ip netip.Addr) {
 		n.rebuildLocked(r.opts.IsolateMode)
 		n.markDirty()
 		r.byID[n.id], r.byIP[ip], r.byMAC[mac] = n, n, n
+		r.fresh[n.id] = true // aparelho desconhecido: confirmNew avisa
 		r.log.Info("IP passou para outro dispositivo", "ip", ip, "mac", mac, "id", n.id)
 	default:
 		// O IP pertence a um aparelho que já conhecemos pelo MAC.
@@ -642,6 +654,7 @@ func (r *Registry) applyNeighbor(ip netip.Addr) {
 				owner.lastSeen.Store(last)
 			}
 			delete(r.byID, cur.id)
+			delete(r.fresh, cur.id)
 			if r.opts.Store != nil {
 				go func() { _ = r.opts.Store.DeleteClient(cur.id) }()
 			}
@@ -670,6 +683,21 @@ func (r *Registry) resolvePTR(ctx context.Context, c *Client, ip netip.Addr) {
 		c.rebuildLocked(r.opts.IsolateMode) // o nome mostrado pode ter mudado
 	}
 	c.mu.Unlock()
+}
+
+// confirmNew dispara OnNew se o cliente que ficou com o IP é um dos recém-criados.
+// Se ele foi absorvido por um aparelho conhecido (mesmo MAC), não é novo.
+func (r *Registry) confirmNew(c *Client, ip netip.Addr) {
+	r.mu.Lock()
+	isNew := r.fresh[c.id]
+	delete(r.fresh, c.id)
+	if len(r.fresh) > 1000 { // sobras de absorvidos: não cresce sem limite
+		clear(r.fresh)
+	}
+	r.mu.Unlock()
+	if isNew && r.opts.OnNew != nil {
+		r.opts.OnNew(c.id, ip)
+	}
 }
 
 // Flush grava os clientes alterados desde a última gravação.

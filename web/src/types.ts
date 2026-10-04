@@ -67,6 +67,7 @@ export type QueryEntry = {
   status: string
   rcode: string
   rule?: string
+  category?: string
   upstream?: string
   duration_ms: number
 }
@@ -95,6 +96,7 @@ export type ListStatus = {
   url: string
   enabled: boolean
   fixed: boolean
+  category: '' | 'threat'
   rules: number
   invalid: number
   updated_at?: string
@@ -116,7 +118,42 @@ export type DomainTest = {
   name: string
   verdict: 'allowed' | 'blocked' | 'isolated'
   rule: string
-  source: '' | 'global' | 'client'
+  source: '' | 'global' | 'client' | 'nrd'
+  category?: string
+  registered_days_ago?: number
   global: { verdict: string; rule: string }
   client?: { id: string; name: string; isolated: boolean; verdict: string; rule: string; skip_global_lists: boolean }
+}
+
+export type SecurityEvent = {
+  id: number
+  first_seen: string
+  last_seen: string
+  count: number
+  kind: string
+  severity: 'low' | 'medium' | 'high' | 'critical'
+  client_id?: string
+  client_ip?: string
+  client_name?: string
+  domain?: string
+  summary: string
+  details?: Record<string, unknown>
+  status: 'open' | 'ack'
+}
+
+export type SecuritySummary = {
+  open: Partial<Record<SecurityEvent['severity'], number>>
+  open_total: number
+  last_24h: Record<string, number>
+}
+
+export type SecuritySettings = {
+  dga: boolean
+  tunnel: boolean
+  nrd: boolean
+  nrd_action: 'alert' | 'block'
+  nrd_max_days: number
+  new_device: boolean
+  auto_isolate: string[]
+  ignore_domains: string[]
 }

@@ -49,8 +49,18 @@ type Event struct {
 	Status   string        `json:"status"`
 	Rcode    string        `json:"rcode"`
 	Rule     string        `json:"rule,omitempty"`
+	Category string        `json:"category,omitempty"` // "threat" (lista de ameaças) ou "nrd" (recém-registrado)
 	Upstream string        `json:"upstream,omitempty"`
 	Duration time.Duration `json:"duration_ns"`
+}
+
+// CategoryNRD marca bloqueios por domínio recém-registrado.
+const CategoryNRD = "nrd"
+
+// NRDBlocker diz se um domínio deve ser barrado por ter sido registrado há
+// pouco (só quando o modo de bloqueio está ligado).
+type NRDBlocker interface {
+	Block(name string) (rule string, block bool)
 }
 
 // Exchanger é o que o servidor precisa dos upstreams.
@@ -68,6 +78,7 @@ type Options struct {
 	Filter       func() *filter.Matcher
 	Upstream     Exchanger
 	Clients      *clients.Registry // nil = sem radar
+	NRD          NRDBlocker        // nil = sem bloqueio de recém-registrados
 	Timeout      time.Duration
 	Logger       *slog.Logger
 	OnQuery      func(Event) // chamado para cada consulta; não deve bloquear
@@ -250,10 +261,17 @@ func (s *Server) handle(r *dns.Msg, ev *Event, pol *clients.Policy) *dns.Msg {
 	if global && (pol == nil || !pol.SkipGlobal) {
 		switch res := s.opts.Filter().Match(ev.Name); res.Verdict {
 		case filter.Blocked:
-			ev.Status, ev.Rule = StatusBlocked, res.Rule
+			ev.Status, ev.Rule, ev.Category = StatusBlocked, res.Rule, res.Category
 			return s.blockedAnswer(r, s.opts.BlockMode)
 		case filter.Allowed:
 			ev.Rule = "@@" + res.Rule // liberado por exceção; segue o fluxo normal
+			global = false            // exceção também vale contra o bloqueio de recém-registrados
+		}
+	}
+	if global && s.opts.NRD != nil {
+		if rule, block := s.opts.NRD.Block(ev.Name); block {
+			ev.Status, ev.Rule, ev.Category = StatusBlocked, rule, CategoryNRD
+			return s.blockedAnswer(r, s.opts.BlockMode)
 		}
 	}
 

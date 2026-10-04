@@ -276,3 +276,43 @@ func TestFindByName(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+func TestOnNewSkipsKnownDeviceWithNewIP(t *testing.T) {
+	var got []string
+	n := &fakeNet{table: map[netip.Addr]string{ipA: macX}}
+	r, _ := NewRegistry(Options{Neighbors: n.get, OnNew: func(id string, _ netip.Addr) { got = append(got, id) }})
+	enrichNew := func(ip netip.Addr) {
+		r.refreshNeighbors(true)
+		r.applyNeighbor(ip)
+		if c := r.lookupIP(ip); c != nil {
+			r.confirmNew(c, ip)
+		}
+	}
+	first := r.Observe(ipA, time.Now())
+	enrichNew(ipA)
+	if len(got) != 1 || got[0] != first.ID() {
+		t.Fatalf("primeiro aparelho deveria avisar: %v", got)
+	}
+	// Mesmo aparelho (MAC) com IP novo: não é novo.
+	n.table = map[netip.Addr]string{ipB: macX}
+	r.Observe(ipB, time.Now())
+	enrichNew(ipB)
+	if len(got) != 1 {
+		t.Errorf("troca de IP não pode avisar dispositivo novo: %v", got)
+	}
+	// Aparelho realmente novo.
+	ipC := netip.MustParseAddr("192.168.1.30")
+	n.table = map[netip.Addr]string{ipC: macY}
+	r.Observe(ipC, time.Now())
+	enrichNew(ipC)
+	if len(got) != 2 {
+		t.Errorf("aparelho novo deveria avisar: %v", got)
+	}
+	// Loopback nunca avisa.
+	lo := netip.MustParseAddr("127.0.0.1")
+	r.Observe(lo, time.Now())
+	enrichNew(lo)
+	if len(got) != 2 {
+		t.Errorf("loopback não avisa: %v", got)
+	}
+}

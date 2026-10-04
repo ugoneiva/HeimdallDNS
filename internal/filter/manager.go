@@ -25,11 +25,12 @@ const maxListSize = 64 << 20 // 64 MiB por lista
 // ListSpec descreve uma lista de bloqueio. Fixed = veio do arquivo de
 // configuração (não pode ser alterada pela interface); as demais têm ID no banco.
 type ListSpec struct {
-	ID      int64
-	Name    string
-	URL     string
-	Enabled bool
-	Fixed   bool
+	ID       int64
+	Name     string
+	URL      string
+	Enabled  bool
+	Fixed    bool
+	Category string // "" ou CategoryThreat
 }
 
 func (l ListSpec) key() string { return fmt.Sprintf("%t|%d|%s", l.Fixed, l.ID, l.URL) }
@@ -41,6 +42,7 @@ type ListStatus struct {
 	URL       string    `json:"url"`
 	Enabled   bool      `json:"enabled"`
 	Fixed     bool      `json:"fixed"`
+	Category  string    `json:"category"`
 	Rules     int       `json:"rules"`
 	Invalid   int       `json:"invalid"`
 	UpdatedAt time.Time `json:"updated_at,omitzero"` // última cópia baixada com sucesso
@@ -104,7 +106,7 @@ func (m *Manager) Status() []ListStatus {
 	defer m.mu.Unlock()
 	out := make([]ListStatus, len(ls))
 	for i, l := range ls {
-		st := ListStatus{ID: l.ID, Name: l.Name, URL: l.URL, Enabled: l.Enabled, Fixed: l.Fixed}
+		st := ListStatus{ID: l.ID, Name: l.Name, URL: l.URL, Enabled: l.Enabled, Fixed: l.Fixed, Category: l.Category}
 		if s := m.status[l.key()]; s != nil {
 			st.Rules, st.Invalid, st.UpdatedAt, st.Error = s.Rules, s.Invalid, s.UpdatedAt, s.Error
 		}
@@ -222,7 +224,7 @@ func (m *Manager) rebuild() {
 		if !l.Enabled {
 			continue
 		}
-		st, mod, err := m.readList(l.URL, b)
+		st, mod, err := m.readList(l.URL, l.Category == CategoryThreat, b)
 		m.mu.Lock()
 		s := m.statusLocked(l)
 		switch {
@@ -243,7 +245,7 @@ func (m *Manager) rebuild() {
 	m.log.Info("regras carregadas", "bloqueio", block, "excecoes", exc, "tempo", time.Since(start).Round(time.Millisecond))
 }
 
-func (m *Manager) readList(src string, b *Builder) (ListStats, time.Time, error) {
+func (m *Manager) readList(src string, threat bool, b *Builder) (ListStats, time.Time, error) {
 	path := localPath(src)
 	if isRemote(src) {
 		path = m.cachePath(src)
@@ -257,7 +259,12 @@ func (m *Manager) readList(src string, b *Builder) (ListStats, time.Time, error)
 	if err != nil {
 		return ListStats{}, time.Time{}, err
 	}
-	st, err := b.AddList(f)
+	var st ListStats
+	if threat {
+		st, err = b.AddThreatList(f)
+	} else {
+		st, err = b.AddList(f)
+	}
 	return st, fi.ModTime(), err
 }
 
