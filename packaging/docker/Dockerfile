@@ -7,6 +7,7 @@ FROM gcr.io/distroless/static-debian12:nonroot
 ARG TARGETPLATFORM
 COPY $TARGETPLATFORM/heimdalldns /usr/bin/heimdalldns
 COPY packaging/docker/heimdalldns.yaml /etc/heimdalldns/heimdalldns.yaml
+COPY LICENSE THIRD_PARTY_LICENSES.md /usr/share/licenses/heimdalldns/
 COPY --from=prep --chown=65532:65532 /data /data
 VOLUME /data
 # O Docker já libera portas baixas para usuário comum dentro do contêiner

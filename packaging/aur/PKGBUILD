@@ -7,7 +7,7 @@ pkgrel=1
 pkgdesc='Servidor DNS com filtro (estilo Pi-hole), radar de dispositivos e detecção de ameaças'
 arch=('x86_64' 'aarch64' 'armv7h')
 url='https://github.com/ugoneiva/HeimdallDNS'
-license=('LicenseRef-Proprietary')
+license=('MIT')
 provides=('heimdalldns')
 conflicts=('heimdalldns')
 backup=('etc/heimdalldns/heimdalldns.yaml')
@@ -26,5 +26,7 @@ package() {
 	install -Dm644 heimdalldns.yaml "${pkgdir}/etc/heimdalldns/heimdalldns.yaml"
 	install -Dm644 heimdalldns.example.yaml "${pkgdir}/usr/share/doc/heimdalldns/heimdalldns.example.yaml"
 	install -Dm644 README.md "${pkgdir}/usr/share/doc/heimdalldns/README.md"
+	install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+	install -Dm644 THIRD_PARTY_LICENSES.md "${pkgdir}/usr/share/licenses/${pkgname}/THIRD_PARTY_LICENSES.md"
 	install -Dm644 deploy/wazuh/heimdalldns_rules.xml "${pkgdir}/usr/share/heimdalldns/wazuh/heimdalldns_rules.xml"
 }

@@ -30,6 +30,8 @@ archives:
     formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}"
     files:
+      - LICENSE
+      - THIRD_PARTY_LICENSES.md
       - README.md
       - heimdalldns.example.yaml
       - deploy/heimdalldns.service
@@ -61,7 +63,7 @@ nfpms:
       Servidor DNS com filtro (estilo Pi-hole), radar de dispositivos,
       isolamento por aparelho, detecção de DGA/túnel, DoH/DoT, DHCP,
       alta disponibilidade e integração com o Active Directory.
-    license: LicenseRef-Proprietary
+    license: MIT
     section: net
     priority: optional
     formats: [deb, rpm, archlinux]
@@ -78,6 +80,13 @@ nfpms:
         dst: /usr/share/doc/heimdalldns/heimdalldns.example.yaml
       - src: README.md
         dst: /usr/share/doc/heimdalldns/README.md
+      - src: LICENSE
+        dst: /usr/share/licenses/heimdalldns/LICENSE
+      - src: THIRD_PARTY_LICENSES.md
+        dst: /usr/share/licenses/heimdalldns/THIRD_PARTY_LICENSES.md
+      - src: LICENSE
+        dst: /usr/share/doc/heimdalldns/copyright
+        packager: deb # padrão Debian para a licença
       - src: deploy/wazuh/heimdalldns_rules.xml
         dst: /usr/share/heimdalldns/wazuh/heimdalldns_rules.xml
       - src: deploy/wazuh/README.md
@@ -99,10 +108,11 @@ dockers_v2:
     images: ["ghcr.io/ugoneiva/heimdalldns"]
     tags: ["{{ .Version }}", "{{ if not .Prerelease }}latest{{ end }}"]
     dockerfile: packaging/docker/Dockerfile
-    extra_files: [packaging/docker/heimdalldns.yaml]
+    extra_files: [packaging/docker/heimdalldns.yaml, LICENSE, THIRD_PARTY_LICENSES.md]
     platforms: [linux/amd64, linux/arm64, linux/arm/v7]
     labels:
       org.opencontainers.image.title: HeimdallDNS
+      org.opencontainers.image.licenses: MIT
       org.opencontainers.image.source: https://github.com/ugoneiva/HeimdallDNS
       org.opencontainers.image.version: "{{ .Version }}"
       org.opencontainers.image.revision: "{{ .FullCommit }}"

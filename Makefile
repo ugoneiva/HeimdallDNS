@@ -3,7 +3,7 @@ COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null)
 DATE    ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
 
-.PHONY: build web web-dev release snapshot test bench run clean
+.PHONY: build web web-dev release snapshot licenses test bench run clean
 
 # O painel compilado (internal/webui/dist) vai no repositório: "make build"
 # funciona sem Node. Depois de mexer em web/, rode "make web".
@@ -28,6 +28,10 @@ release:
 # goreleaser: go install github.com/goreleaser/goreleaser/v2@latest).
 snapshot:
 	goreleaser release --snapshot --clean --skip=docker,sign,sbom
+
+# Licenças de tudo o que vai embutido no binário (rode ao mudar dependências).
+licenses:
+	node scripts/third-party-licenses.mjs
 
 test:
 	go vet ./...

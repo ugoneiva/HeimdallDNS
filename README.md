@@ -526,3 +526,9 @@ O painel compilado vai no repositório, então `make build` (ou `go install`) fu
 ## Próximas etapas
 
 1. Publicar a versão 0.1 (tag `v0.1.0`; o workflow gera pacotes, imagem e assinaturas).
+
+## Licença
+
+O HeimdallDNS é software livre, sob a [licença MIT](LICENSE): pode usar, copiar, modificar, distribuir e vender, inclusive em produtos fechados, desde que mantenha o aviso de autoria.
+
+As bibliotecas embutidas no binário (Go e o painel) são todas de licenças abertas e compatíveis (BSD, MIT, Apache-2.0, ISC, Unlicense). Os textos delas estão em [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md), que vai junto em todos os pacotes. Depois de mudar dependências, rode `make licenses`.
