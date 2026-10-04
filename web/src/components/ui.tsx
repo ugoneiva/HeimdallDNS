@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react'
 import { CircleAlert, CircleCheck, LoaderCircle, TriangleAlert, X } from 'lucide-react'
+import { t, tServer } from '../lib/i18n'
 
 export function cx(...c: (string | false | null | undefined)[]) {
   return c.filter(Boolean).join(' ')
@@ -233,7 +234,7 @@ export function Modal({ open, onClose, title, children, wide }: {
             <h2 id={id} className="text-sm font-semibold">
               {title}
             </h2>
-            <button onClick={onClose} aria-label="Fechar" className="rounded-md p-1 text-muted hover:bg-surface-2 hover:text-ink">
+            <button onClick={onClose} aria-label={t('Fechar')} className="rounded-md p-1 text-muted hover:bg-surface-2 hover:text-ink">
               <X className="size-4" />
             </button>
           </header>
@@ -260,7 +261,7 @@ export function ErrorNote({ error }: { error: unknown }) {
   return (
     <p role="alert" className="flex items-start gap-1.5 rounded-lg bg-critical-soft px-3 py-2 text-xs text-critical-ink">
       <CircleAlert className="mt-px size-3.5 shrink-0" aria-hidden />
-      {msg}
+      {tServer(msg)}
     </p>
   )
 }

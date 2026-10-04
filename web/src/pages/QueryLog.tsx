@@ -9,6 +9,7 @@ import { fmtClock, fmtDateTime, fmtInt, fmtMs, isBlockedStatus, statusLabel } fr
 import { Button, Card, ErrorNote, Input, Segmented, Select, StatusBadge, cx } from '../components/ui'
 import { useDevices } from './Devices'
 import { rangeOptions, type Range } from './Overview'
+import { t } from '../lib/i18n'
 
 const MAX_ROWS = 5000
 const ROW_H = 44
@@ -45,40 +46,40 @@ export function QueryLog() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <Segmented
-          label="Modo"
+          label={t('Modo')}
           value={mode}
           onChange={setMode}
           options={[
-            { value: 'live', label: 'Ao vivo' },
-            { value: 'history', label: 'Histórico' },
+            { value: 'live', label: t('Ao vivo') },
+            { value: 'history', label: t('Histórico') },
           ]}
         />
-        {mode === 'history' && <Segmented label="Período" value={range} onChange={setRange} options={rangeOptions} />}
+        {mode === 'history' && <Segmented label={t('Período')} value={range} onChange={setRange} options={rangeOptions} />}
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative w-full sm:w-64">
           <Search className="pointer-events-none absolute top-2.5 left-3 size-4 text-muted" aria-hidden />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar domínio…" className="pl-9" aria-label="Buscar domínio" />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('Buscar domínio…')} className="pl-9" aria-label={t('Buscar domínio')} />
         </div>
         <Select
-          label="Dispositivo"
+          label={t('Dispositivo')}
           value={client}
           onChange={setClient}
           className="max-w-56"
-          options={[{ value: '', label: 'Todos os dispositivos' }, ...devices.map((d) => ({ value: d.id, label: d.display }))]}
+          options={[{ value: '', label: t('Todos os dispositivos') }, ...devices.map((d) => ({ value: d.id, label: d.display }))]}
         />
         <Segmented
-          label="Status"
+          label={t('Status')}
           value={status}
           onChange={setStatus}
           options={[
-            { value: '', label: 'Todas' },
-            { value: 'allowed', label: 'Permitidas' },
-            { value: 'blocked', label: 'Bloqueadas' },
-            { value: 'cached', label: 'Cache' },
+            { value: '', label: t('Todas') },
+            { value: 'allowed', label: t('Permitidas') },
+            { value: 'blocked', label: t('Bloqueadas') },
+            { value: 'cached', label: t('Cache') },
           ]}
         />
-        <Select label="Tipo" value={type} onChange={setType} options={types.map((t) => ({ value: t, label: t || 'Todos os tipos' }))} />
+        <Select label={t('Tipo')} value={type} onChange={setType} options={types.map((ty) => ({ value: ty, label: ty || t('Todos os tipos') }))} />
       </div>
       {mode === 'live' ? <LiveLog filters={filters} /> : <HistoryLog filters={filters} range={range} />}
     </div>
@@ -140,16 +141,16 @@ function LiveLog({ filters }: { filters: Filters }) {
         <div className="flex items-center gap-3 text-xs text-ink-2">
           {state === 'open' ? (
             <StatusBadge tone="good">
-              <Radio className="size-3" aria-hidden /> Ao vivo
+              <Radio className="size-3" aria-hidden />{' '}{t('Ao vivo')}
             </StatusBadge>
           ) : (
-            <StatusBadge tone="warning">Reconectando…</StatusBadge>
+            <StatusBadge tone="warning">{t('Reconectando…')}</StatusBadge>
           )}
-          <span className="tabular">{perSec.toFixed(1).replace('.', ',')} consultas/s</span>
-          <span className="tabular text-muted">{fmtInt(rows.length)} na tela</span>
+          <span className="tabular">{perSec.toFixed(1).replace('.', ',')}{' '}{t('consultas/s')}</span>
+          <span className="tabular text-muted">{fmtInt(rows.length)}{' '}{t('na tela')}</span>
           {dropped > 0 && (
-            <span className="text-muted" title="O navegador não acompanhou o ritmo; essas consultas estão no histórico.">
-              {fmtInt(dropped)} não exibidas
+            <span className="text-muted" title={t('O navegador não acompanhou o ritmo; essas consultas estão no histórico.')}>
+              {fmtInt(dropped)}{' '}{t('não exibidas')}
             </span>
           )}
         </div>
@@ -160,14 +161,14 @@ function LiveLog({ filters }: { filters: Filters }) {
             icon={paused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
             onClick={() => setPaused(!paused)}
           >
-            {paused ? `Retomar${pending ? ` (${fmtInt(pending)} novas)` : ''}` : 'Pausar'}
+            {paused ? t('Retomar') + (pending ? t(' ({n} novas)', { n: fmtInt(pending) }) : '') : t('Pausar')}
           </Button>
           <Button size="sm" variant="ghost" icon={<Trash className="size-3.5" />} onClick={() => setRows([])}>
-            Limpar
+            {t('Limpar')}
           </Button>
         </div>
       </div>
-      <QueryTable rows={rows} live empty={state === 'open' ? 'Aguardando consultas…' : 'Conectando ao servidor…'} />
+      <QueryTable rows={rows} live empty={state === 'open' ? t('Aguardando consultas…') : t('Conectando ao servidor…')} />
     </Card>
   )
 }
@@ -184,15 +185,15 @@ function HistoryLog({ filters, range }: { filters: Filters; range: Range }) {
   return (
     <Card pad={false}>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3 text-xs text-ink-2">
-        <span className="tabular">{fmtInt(rows.length)} consultas carregadas</span>
+        <span className="tabular">{fmtInt(rows.length)}{' '}{t('consultas carregadas')}</span>
         <Button size="sm" onClick={() => q.refetch()} loading={q.isRefetching}>
-          Atualizar
+          {t('Atualizar')}
         </Button>
       </div>
       <ErrorNote error={q.error} />
       <QueryTable
         rows={rows}
-        empty={q.isLoading ? 'Carregando…' : 'Nenhuma consulta encontrada.'}
+        empty={q.isLoading ? t('Carregando…') : t('Nenhuma consulta encontrada.')}
         onEnd={() => q.hasNextPage && !q.isFetchingNextPage && q.fetchNextPage()}
       />
     </Card>
@@ -230,12 +231,12 @@ function QueryTable({ rows, live, empty, onEnd }: {
     <div className="overflow-x-auto">
       <div className="min-w-[860px]">
         <div className={cx(cols, 'border-b border-line px-4 py-2 text-xs font-medium text-muted')}>
-          <span>Hora</span>
-          <span>Dispositivo</span>
-          <span>Domínio</span>
-          <span>Tipo</span>
-          <span>Resultado</span>
-          <span className="text-right">Tempo</span>
+          <span>{t('Hora')}</span>
+          <span>{t('Dispositivo')}</span>
+          <span>{t('Domínio')}</span>
+          <span>{t('Tipo')}</span>
+          <span>{t('Resultado')}</span>
+          <span className="text-right">{t('Tempo')}</span>
           <span />
         </div>
         <div ref={parent} className="h-[calc(100vh-330px)] min-h-80 overflow-y-auto">
@@ -265,8 +266,8 @@ function QueryTable({ rows, live, empty, onEnd }: {
                       </span>
                       {e.rule && (
                         <span className="block truncate text-[11px] text-muted" title={e.rule}>
-                          {e.category === 'threat' && <strong className="text-critical-ink">ameaça · </strong>}
-                          {e.category === 'nrd' && <strong className="text-ink-2">recém-registrado · </strong>}
+                          {e.category === 'threat' && <strong className="text-critical-ink">{t('ameaça ·')}{' '}</strong>}
+                          {e.category === 'nrd' && <strong className="text-ink-2">{t('recém-registrado ·')}{' '}</strong>}
                           {e.rule}
                         </span>
                       )}
@@ -283,17 +284,17 @@ function QueryTable({ rows, live, empty, onEnd }: {
                         <button
                           onClick={() => act(e.name, 'allow')}
                           className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-ink-2 hover:bg-surface-3 hover:text-ink"
-                          title={`Liberar ${e.name} para todos`}
+                          title={t('Liberar {nome} para todos', { nome: e.name })}
                         >
-                          <Check className="size-3" aria-hidden /> Liberar
+                          <Check className="size-3" aria-hidden />{' '}{t('Liberar')}
                         </button>
                       ) : (
                         <button
                           onClick={() => act(e.name, 'block')}
                           className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-ink-2 hover:bg-surface-3 hover:text-ink"
-                          title={`Bloquear ${e.name} para todos`}
+                          title={t('Bloquear {nome} para todos', { nome: e.name })}
                         >
-                          <Ban className="size-3" aria-hidden /> Bloquear
+                          <Ban className="size-3" aria-hidden />{' '}{t('Bloquear')}
                         </button>
                       )}
                     </span>

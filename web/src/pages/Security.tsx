@@ -5,6 +5,7 @@ import { api, qs } from '../api'
 import type { SecurityEvent, SecuritySettings, SecuritySummary } from '../types'
 import { ago, fmtDateTime, fmtInt, kindLabel, severityLabel } from '../lib/format'
 import { Button, Card, ErrorNote, Field, Input, Modal, Segmented, Select, Switch, Textarea, cx } from '../components/ui'
+import { t } from '../lib/i18n'
 
 export function useSecuritySummary() {
   return useQuery({
@@ -78,14 +79,14 @@ export function Security({ onOpenDevice }: { onOpenDevice: (id: string) => void 
         {sevs.map((sv) => (
           <div key={sv} className="rounded-xl border border-line bg-surface px-4 py-3.5">
             <p className="flex items-center gap-2 text-xs text-muted">
-              Abertos <SeverityBadge sev={sv} />
+              {t('Abertos')}{' '}<SeverityBadge sev={sv} />
             </p>
             <p className="mt-1 text-2xl font-semibold text-ink">{fmtInt(s?.open[sv] ?? 0)}</p>
           </div>
         ))}
       </div>
 
-      <Card title="Últimas 24 horas" subtitle="Ocorrências por tipo de detecção (repetições somadas)">
+      <Card title={t('Últimas 24 horas')} subtitle={t('Ocorrências por tipo de detecção (repetições somadas)')}>
         <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           {Object.keys(kindLabel).map((k) => (
             <li key={k} className="rounded-lg border border-line px-3 py-2.5">
@@ -98,35 +99,35 @@ export function Security({ onOpenDevice }: { onOpenDevice: (id: string) => void 
 
       <div className="flex flex-wrap items-center gap-2">
         <Segmented
-          label="Situação"
+          label={t('Situação')}
           value={status}
           onChange={setStatus}
           options={[
-            { value: 'open', label: 'Abertos' },
-            { value: 'ack', label: 'Reconhecidos' },
-            { value: '', label: 'Todos' },
+            { value: 'open', label: t('Abertos') },
+            { value: 'ack', label: t('Reconhecidos') },
+            { value: '', label: t('Todos') },
           ]}
         />
         <Select
-          label="Tipo"
+          label={t('Tipo')}
           value={kind}
           onChange={setKind}
-          options={[{ value: '', label: 'Todos os tipos' }, ...Object.entries(kindLabel).map(([value, label]) => ({ value, label }))]}
+          options={[{ value: '', label: t('Todos os tipos') }, ...Object.entries(kindLabel).map(([value, label]) => ({ value, label }))]}
         />
         <Segmented
-          label="Período"
+          label={t('Período')}
           value={range}
           onChange={setRange}
           options={[
-            { value: '24h', label: '24 horas' },
-            { value: '7d', label: '7 dias' },
-            { value: '30d', label: '30 dias' },
-            { value: '90d', label: '90 dias' },
+            { value: '24h', label: t('24 horas') },
+            { value: '7d', label: t('7 dias') },
+            { value: '30d', label: t('30 dias') },
+            { value: '90d', label: t('90 dias') },
           ]}
         />
         {status === 'open' && list.length > 0 && (
           <Button size="sm" className="ml-auto" loading={setEv.isPending} onClick={() => setEv.mutate({ id: 'all', to: 'ack' })}>
-            Reconhecer todos
+            {t('Reconhecer todos')}
           </Button>
         )}
       </div>
@@ -136,7 +137,7 @@ export function Security({ onOpenDevice }: { onOpenDevice: (id: string) => void 
         {list.length === 0 ? (
           <p className="flex items-center justify-center gap-2 py-12 text-sm text-muted">
             <ShieldCheck className="size-4 text-good" aria-hidden />
-            {events.isLoading ? 'Carregando…' : status === 'open' ? 'Nenhum alerta aberto.' : 'Nenhum alerta no período.'}
+            {events.isLoading ? t('Carregando…') : status === 'open' ? t('Nenhum alerta aberto.') : t('Nenhum alerta no período.')}
           </p>
         ) : (
           <ul className="divide-y divide-line">
@@ -148,7 +149,7 @@ export function Security({ onOpenDevice }: { onOpenDevice: (id: string) => void 
                 <div className="min-w-0 flex-1 basis-80">
                   <p className="text-xs font-semibold text-ink">
                     {kindLabel[e.kind] ?? e.kind}
-                    {e.count > 1 && <span className="ml-2 font-normal text-muted">{fmtInt(e.count)}×</span>}
+                    {e.count > 1 && <span className="ml-2 font-normal text-muted">{fmtInt(e.count)}{t('×')}</span>}
                   </p>
                   <p className="mt-0.5 text-xs leading-relaxed text-ink-2">{e.summary}</p>
                   <p className="mt-1 text-[11px] text-muted">
@@ -166,25 +167,25 @@ export function Security({ onOpenDevice }: { onOpenDevice: (id: string) => void 
                 </div>
                 <div className="flex shrink-0 flex-wrap items-center gap-1">
                   <Button size="sm" variant="ghost" onClick={() => setDetail(e)}>
-                    Detalhes
+                    {t('Detalhes')}
                   </Button>
                   {e.client_id && e.kind !== 'new_device' && (
                     <Button size="sm" variant="ghost" icon={<Lock className="size-3.5" />} loading={isolate.isPending && isolate.variables?.id === e.id} onClick={() => isolate.mutate(e)}>
-                      Isolar
+                      {t('Isolar')}
                     </Button>
                   )}
                   {e.domain && (
-                    <Button size="sm" variant="ghost" icon={<EyeOff className="size-3.5" />} onClick={() => ignore.mutate(e.domain!)} title="As detecções passam a ignorar este domínio">
-                      Ignorar domínio
+                    <Button size="sm" variant="ghost" icon={<EyeOff className="size-3.5" />} onClick={() => ignore.mutate(e.domain!)} title={t('As detecções passam a ignorar este domínio')}>
+                      {t('Ignorar domínio')}
                     </Button>
                   )}
                   {e.status === 'open' ? (
                     <Button size="sm" icon={<CircleCheck className="size-3.5" />} onClick={() => setEv.mutate({ id: e.id, to: 'ack' })}>
-                      Reconhecer
+                      {t('Reconhecer')}
                     </Button>
                   ) : (
                     <Button size="sm" variant="ghost" onClick={() => setEv.mutate({ id: e.id, to: 'reopen' })}>
-                      Reabrir
+                      {t('Reabrir')}
                     </Button>
                   )}
                 </div>
@@ -203,10 +204,10 @@ export function Security({ onOpenDevice }: { onOpenDevice: (id: string) => void 
             <dl className="grid grid-cols-2 gap-3">
               {(
                 [
-                  ['Primeira vez', fmtDateTime(detail.first_seen)],
-                  ['Última vez', fmtDateTime(detail.last_seen)],
-                  ['Ocorrências', fmtInt(detail.count)],
-                  ['Dispositivo', detail.client_name || detail.client_ip || '—'],
+                  [t('Primeira vez'), fmtDateTime(detail.first_seen)],
+                  [t('Última vez'), fmtDateTime(detail.last_seen)],
+                  [t('Ocorrências'), fmtInt(detail.count)],
+                  [t('Dispositivo'), detail.client_name || detail.client_ip || '—'],
                 ] as const
               ).map(([k, v]) => (
                 <div key={k}>
@@ -235,7 +236,7 @@ function SettingsCard() {
   useEffect(() => {
     if (q.data) {
       setS(q.data)
-      setIgnore(q.data.ignore_domains.join('\n'))
+      setIgnore((q.data.ignore_domains ?? []).join('\n'))
     }
   }, [q.data])
   const save = useMutation({
@@ -262,10 +263,10 @@ function SettingsCard() {
       title={
         <span className="flex items-center gap-2">
           <ShieldAlert className="size-4 text-accent" aria-hidden />
-          Detecções
+          {t('Detecções')}
         </span>
       }
-      subtitle="Valem na hora, sem reiniciar o serviço"
+      subtitle={t('Valem na hora, sem reiniciar o serviço')}
     >
       <form
         className="grid gap-6 lg:grid-cols-2"
@@ -281,35 +282,35 @@ function SettingsCard() {
         }}
       >
         <div className="divide-y divide-line">
-          {row('Malware com DGA', 'Vários nomes aleatórios inexistentes consultados pelo mesmo dispositivo.', s.dga, (v) => set({ dga: v }))}
-          {row('Túnel DNS', 'Muitos subdomínios longos e únicos sob o mesmo domínio, ou rajadas de TXT.', s.tunnel, (v) => set({ tunnel: v }))}
-          {row('Dispositivo novo', 'Avisa quando um aparelho desconhecido aparece na rede.', s.new_device, (v) => set({ new_device: v }))}
+          {row(t('Malware com DGA'), t('Vários nomes aleatórios inexistentes consultados pelo mesmo dispositivo.'), s.dga, (v) => set({ dga: v }))}
+          {row(t('Túnel DNS'), t('Muitos subdomínios longos e únicos sob o mesmo domínio, ou rajadas de TXT.'), s.tunnel, (v) => set({ tunnel: v }))}
+          {row(t('Dispositivo novo'), t('Avisa quando um aparelho desconhecido aparece na rede.'), s.new_device, (v) => set({ new_device: v }))}
           {row(
-            'Domínios recém-registrados',
-            'Consulta a data de registro (RDAP) direto no registro de cada domínio. O nome do domínio sai da rede para o registro.',
+            t('Domínios recém-registrados'),
+            t('Consulta a data de registro (RDAP) direto no registro de cada domínio. O nome do domínio sai da rede para o registro.'),
             s.nrd,
             (v) => set({ nrd: v }),
           )}
           {s.nrd && (
             <div className="grid gap-3 py-3 sm:grid-cols-2">
-              <Field label="Ao encontrar um">
+              <Field label={t('Ao encontrar um')}>
                 <Select
-                  label="Ação"
+                  label={t('Ação')}
                   value={s.nrd_action}
                   onChange={(v) => set({ nrd_action: v as 'alert' | 'block' })}
                   className="w-full"
                   options={[
-                    { value: 'alert', label: 'Só alertar' },
-                    { value: 'block', label: 'Bloquear e alertar' },
+                    { value: 'alert', label: t('Só alertar') },
+                    { value: 'block', label: t('Bloquear e alertar') },
                   ]}
                 />
               </Field>
-              <Field label="Considerar novo até (dias)">
+              <Field label={t('Considerar novo até (dias)')}>
                 <Input type="number" min={1} max={365} value={s.nrd_max_days} onChange={(e) => set({ nrd_max_days: Number(e.target.value) })} />
               </Field>
               {s.nrd_action === 'block' && (
                 <p className="col-span-full text-[11px] text-muted">
-                  O primeiro acesso a um domínio desconhecido passa enquanto a data é consultada; os seguintes são bloqueados.
+                  {t('O primeiro acesso a um domínio desconhecido passa enquanto a data é consultada; os seguintes são bloqueados.')}
                 </p>
               )}
             </div>
@@ -317,8 +318,8 @@ function SettingsCard() {
         </div>
         <div className="space-y-4">
           <div>
-            <p className="text-sm text-ink">Isolar o dispositivo automaticamente quando houver</p>
-            <p className="mb-2 text-[11px] text-muted">Contenção imediata. O alerta registra que o isolamento foi automático.</p>
+            <p className="text-sm text-ink">{t('Isolar o dispositivo automaticamente quando houver')}</p>
+            <p className="mb-2 text-[11px] text-muted">{t('Contenção imediata. O alerta registra que o isolamento foi automático.')}</p>
             <div className="flex flex-wrap gap-2">
               {isolateKinds.map((k) => (
                 <label key={k} className="flex items-center gap-2 rounded-lg border border-line px-2.5 py-1.5 text-xs text-ink">
@@ -328,14 +329,14 @@ function SettingsCard() {
               ))}
             </div>
           </div>
-          <Field label="Domínios ignorados pelas detecções (um por linha)" hint="Ex.: serviços legítimos que consultam muitos subdomínios. CDNs e antivírus conhecidos já são ignorados no túnel DNS.">
-            <Textarea rows={5} value={ignore} onChange={(e) => setIgnore(e.target.value)} placeholder="meu-servico-interno.com.br" />
+          <Field label={t('Domínios ignorados pelas detecções (um por linha)')} hint={t('Ex.: serviços legítimos que consultam muitos subdomínios. CDNs e antivírus conhecidos já são ignorados no túnel DNS.')}>
+            <Textarea rows={5} value={ignore} onChange={(e) => setIgnore(e.target.value)} placeholder={t('meu-servico-interno.com.br')} />
           </Field>
           <ErrorNote error={save.error} />
           <div className="flex items-center justify-end gap-3">
-            {save.isSuccess && <span className="text-xs text-good-ink">Salvo e em vigor.</span>}
+            {save.isSuccess && <span className="text-xs text-good-ink">{t('Salvo e em vigor.')}</span>}
             <Button type="submit" variant="primary" loading={save.isPending}>
-              Salvar detecções
+              {t('Salvar detecções')}
             </Button>
           </div>
         </div>

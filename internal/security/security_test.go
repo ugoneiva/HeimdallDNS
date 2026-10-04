@@ -1,8 +1,10 @@
 package security
 
 import (
+	"encoding/json"
 	"net/netip"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -111,5 +113,16 @@ func TestIgnoreAndValidate(t *testing.T) {
 	m2, _ := New(Options{Store: st, Defaults: Settings{NRDAction: "alert", NRDMaxDays: 30}})
 	if !m2.Settings().DGA {
 		t.Error("configurações do painel devem valer sobre os padrões")
+	}
+}
+
+func TestSettingsNeverNull(t *testing.T) {
+	m, err := New(Options{Defaults: Settings{NRDAction: "alert", NRDMaxDays: 30}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(m.Settings())
+	if strings.Contains(string(b), "null") {
+		t.Errorf("listas vazias saíram como null: %s", b)
 	}
 }

@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "i18n": "node --experimental-strip-types scripts/i18n-keys.mjs --missing"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.104.1",

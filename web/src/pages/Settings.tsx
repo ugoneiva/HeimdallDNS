@@ -13,6 +13,8 @@ import { BackupCard, PiholeImport } from './Maintenance'
 import { TokensCard, UsersCard } from './Access'
 import { AuditTab } from './ActiveDirectory'
 import { roleLabel, useAuth, useCan } from '../lib/auth'
+import { LangPicker } from '../components/LangPicker'
+import { t } from '../lib/i18n'
 
 export function Settings({ onLogout }: { onLogout: () => void }) {
   const { choice } = useTheme()
@@ -24,32 +26,35 @@ export function Settings({ onLogout }: { onLogout: () => void }) {
 
   return (
     <div className="grid gap-5 lg:grid-cols-2">
-      <Card title="Aparência">
+      <Card title={t('Aparência')}>
         <Segmented
-          label="Tema"
+          label={t('Tema')}
           value={choice}
           onChange={setTheme}
           options={[
-            { value: 'dark', label: <span className="flex items-center gap-1.5"><Moon className="size-3.5" aria-hidden />Escuro</span> },
-            { value: 'light', label: <span className="flex items-center gap-1.5"><Sun className="size-3.5" aria-hidden />Claro</span> },
-            { value: 'auto', label: <span className="flex items-center gap-1.5"><Monitor className="size-3.5" aria-hidden />Sistema</span> },
+            { value: 'dark', label: <span className="flex items-center gap-1.5"><Moon className="size-3.5" aria-hidden />{t('Escuro')}</span> },
+            { value: 'light', label: <span className="flex items-center gap-1.5"><Sun className="size-3.5" aria-hidden />{t('Claro')}</span> },
+            { value: 'auto', label: <span className="flex items-center gap-1.5"><Monitor className="size-3.5" aria-hidden />{t('Sistema')}</span> },
           ]}
         />
+              <div className="mt-3">
+          <LangPicker />
+        </div>
       </Card>
 
-      <Card title="Sobre este servidor">
+      <Card title={t('Sobre este servidor')}>
         {s ? (
           <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-xs">
             {(
               [
-                ['Versão', s.version],
-                ['Ligado há', uptime(s.uptime_s)],
-                ['Consultas desde que ligou', fmtInt(s.queries.total)],
-                ['Regras de bloqueio', fmtInt(s.rules.block)],
-                ['Respostas no cache', fmtInt(s.cache.entries)],
-                ['Acerto do cache', fmtPct(hit)],
-                ['Dispositivos conhecidos', fmtInt(s.clients)],
-                ['Histórico descartado', s.history ? fmtInt(s.history.dropped_rows) + ' linhas' : '—'],
+                [t('Versão'), s.version],
+                [t('Ligado há'), uptime(s.uptime_s)],
+                [t('Consultas desde que ligou'), fmtInt(s.queries.total)],
+                [t('Regras de bloqueio'), fmtInt(s.rules.block)],
+                [t('Respostas no cache'), fmtInt(s.cache.entries)],
+                [t('Acerto do cache'), fmtPct(hit)],
+                [t('Dispositivos conhecidos'), fmtInt(s.clients)],
+                [t('Histórico descartado'), s.history ? fmtInt(s.history.dropped_rows) + ' linhas' : '—'],
               ] as const
             ).map(([k, v]) => (
               <div key={k}>
@@ -59,7 +64,7 @@ export function Settings({ onLogout }: { onLogout: () => void }) {
             ))}
           </dl>
         ) : (
-          <p className="text-xs text-muted">Carregando…</p>
+          <p className="text-xs text-muted">{t('Carregando…')}</p>
         )}
       </Card>
 
@@ -75,7 +80,7 @@ export function Settings({ onLogout }: { onLogout: () => void }) {
 
           <BackupCard />
 
-          <Card title="Migrar do Pi-hole" subtitle="Listas, regras, registros locais, reservas de DHCP e nomes dos aparelhos">
+          <Card title={t('Migrar do Pi-hole')} subtitle={t('Listas, regras, registros locais, reservas de DHCP e nomes dos aparelhos')}>
             <PiholeImport />
           </Card>
 
@@ -86,8 +91,8 @@ export function Settings({ onLogout }: { onLogout: () => void }) {
       )}
 
       {me?.source === 'ad' ? (
-        <Card title="Senha" subtitle="Conta do Active Directory">
-          <p className="text-xs text-ink-2">A senha é a do AD: troque pelo Windows (Ctrl+Alt+Del) ou pela política da empresa.</p>
+        <Card title={t('Senha')} subtitle={t('Conta do Active Directory')}>
+          <p className="text-xs text-ink-2">{t('A senha é a do AD: troque pelo Windows (Ctrl+Alt+Del) ou pela política da empresa.')}</p>
         </Card>
       ) : (
         <PasswordCard />
@@ -95,18 +100,18 @@ export function Settings({ onLogout }: { onLogout: () => void }) {
 
       <MFACard />
 
-      <Card title="Sessão">
+      <Card title={t('Sessão')}>
         {me && (
           <p className="mb-2 text-xs text-ink-2">
-            Conectado como <strong className="text-ink">{me.display || me.username}</strong> ({roleLabel[me.role]}
-            {me.source === 'ad' ? ', conta do AD' : ''}).
+            {t('Conectado como')}{' '}<strong className="text-ink">{me.display || me.username}</strong> ({roleLabel[me.role]}
+            {me.source === 'ad' ? t(', conta do AD') : ''}).
           </p>
         )}
         <p className="mb-4 text-xs text-ink-2">
-          A sessão dura 7 dias. Se perder a senha, rode <code className="font-mono text-ink">sudo heimdalldns passwd</code> no servidor.
+          {t('A sessão dura 7 dias. Se perder a senha, rode')}{' '}<code className="font-mono text-ink">sudo heimdalldns passwd</code>{' '}{t('no servidor.')}
         </p>
         <Button icon={<LogOut className="size-4" />} onClick={onLogout}>
-          Sair
+          {t('Sair')}
         </Button>
       </Card>
     </div>
@@ -118,10 +123,9 @@ function HACard() {
   if (!data) return null
   if (data.role === '') {
     return (
-      <Card title="Alta disponibilidade" subtitle="Nó único">
+      <Card title={t('Alta disponibilidade')} subtitle={t('Nó único')}>
         <p className="mb-3 text-xs leading-relaxed text-ink-2">
-          Com um segundo HeimdallDNS como réplica, a rede continua com DNS se um dos dois cair. Entregue os dois como servidores DNS
-          (no DHCP ou no roteador). Listas, regras, segurança, dispositivos e a senha vão do principal para a réplica em cerca de 1 segundo.
+          {t('Com um segundo HeimdallDNS como réplica, a rede continua com DNS se um dos dois cair. Entregue os dois como servidores DNS (no DHCP ou no roteador). Listas, regras, segurança, dispositivos e a senha vão do principal para a réplica em cerca de 1 segundo.')}
         </p>
         <pre className="overflow-x-auto rounded-lg bg-surface-2 p-3 font-mono text-[11px] text-ink">{`# no principal
 ha:
@@ -139,19 +143,19 @@ ha:
   if (data.role === 'replica') {
     const r = data.replica
     return (
-      <Card title="Alta disponibilidade" subtitle="Este nó é uma réplica">
+      <Card title={t('Alta disponibilidade')} subtitle={t('Este nó é uma réplica')}>
         <dl className="grid grid-cols-2 gap-3 text-xs">
           <div>
-            <dt className="text-muted">Principal</dt>
+            <dt className="text-muted">{t('Principal')}</dt>
             <dd className="mt-0.5 font-mono text-ink">{r?.primary_url}</dd>
           </div>
           <div>
-            <dt className="text-muted">Última sincronização</dt>
+            <dt className="text-muted">{t('Última sincronização')}</dt>
             <dd className="mt-0.5 text-ink">{ago(r?.last_sync)}</dd>
           </div>
           {r?.error && (
             <div className="col-span-2">
-              <dt className="text-muted">Erro</dt>
+              <dt className="text-muted">{t('Erro')}</dt>
               <dd className="mt-0.5 break-all text-critical-ink">{r.error}</dd>
             </div>
           )}
@@ -161,16 +165,16 @@ ha:
   }
   const reps = data.replicas ?? []
   return (
-    <Card title="Alta disponibilidade" subtitle="Este nó é o principal">
+    <Card title={t('Alta disponibilidade')} subtitle={t('Este nó é o principal')}>
       {reps.length === 0 ? (
-        <p className="text-xs text-muted">Nenhuma réplica conectada na última hora.</p>
+        <p className="text-xs text-muted">{t('Nenhuma réplica conectada na última hora.')}</p>
       ) : (
         <ul className="space-y-2 text-xs">
           {reps.map((r) => (
             <li key={r.addr} className="flex flex-wrap items-center justify-between gap-2">
               <span className="font-mono text-ink">{r.addr}</span>
-              <span className="text-ink-2">visto {ago(r.last_seen)}</span>
-              {r.version === data.version ? <StatusBadge tone="good">Em dia</StatusBadge> : <StatusBadge tone="warning">Atualizando</StatusBadge>}
+              <span className="text-ink-2">{t('visto')}{' '}{ago(r.last_seen)}</span>
+              {r.version === data.version ? <StatusBadge tone="good">{t('Em dia')}</StatusBadge> : <StatusBadge tone="warning">{t('Atualizando')}</StatusBadge>}
             </li>
           ))}
         </ul>
@@ -183,11 +187,9 @@ function DHCPCard() {
   const { data } = useDHCP()
   if (!data || data.enabled) return null
   return (
-    <Card title="DHCP" subtitle="Desligado">
+    <Card title={t('DHCP')} subtitle={t('Desligado')}>
       <p className="mb-3 text-xs leading-relaxed text-ink-2">
-        Com o DHCP do HeimdallDNS, cada aparelho recebe este servidor como DNS automaticamente, o radar aprende nome e MAC direto da
-        concessão, e os nomes resolvem como <code className="font-mono text-ink">notebook-da-ana.lan</code>. Desligue o DHCP do roteador
-        antes: dois servidores DHCP na mesma rede brigam.
+        {t('Com o DHCP do HeimdallDNS, cada aparelho recebe este servidor como DNS automaticamente, o radar aprende nome e MAC direto da concessão, e os nomes resolvem como')}{' '}<code className="font-mono text-ink">notebook-da-ana.lan</code>{t('. Desligue o DHCP do roteador antes: dois servidores DHCP na mesma rede brigam.')}
       </p>
       <pre className="overflow-x-auto rounded-lg bg-surface-2 p-3 font-mono text-[11px] text-ink">{`dhcp:
   enabled: true
@@ -203,8 +205,8 @@ function PasswordCard() {
   const ha = useHA()
   if (ha.data?.role === 'replica') {
     return (
-      <Card title="Trocar a senha" subtitle="Feito no principal">
-        <p className="text-xs text-ink-2">Nesta réplica a senha vem do principal: troque por lá e ela chega aqui em cerca de 1 segundo.</p>
+      <Card title={t('Trocar a senha')} subtitle={t('Feito no principal')}>
+        <p className="text-xs text-ink-2">{t('Nesta réplica a senha vem do principal: troque por lá e ela chega aqui em cerca de 1 segundo.')}</p>
       </Card>
     )
   }
@@ -247,13 +249,13 @@ export function MFACard() {
   const ad = me?.source === 'ad'
   if (ha.data?.role === 'replica') {
     return (
-      <Card title="Verificação em duas etapas" subtitle={on ? 'Ligada (vem do principal)' : 'Desligada'}>
-        <p className="text-xs text-ink-2">Nesta réplica o MFA vem do principal.</p>
+      <Card title={t('Verificação em duas etapas')} subtitle={on ? t('Ligada (vem do principal)') : t('Desligada')}>
+        <p className="text-xs text-ink-2">{t('Nesta réplica o MFA vem do principal.')}</p>
       </Card>
     )
   }
   return (
-    <Card title="Verificação em duas etapas" subtitle={on ? 'Ligada' : 'Desligada — recomendada, e obrigatória para alterar o Active Directory'}>
+    <Card title={t('Verificação em duas etapas')} subtitle={on ? t('Ligada') : t('Desligada — recomendada, e obrigatória para alterar o Active Directory')}>
       {on ? (
         <form
           className="space-y-3"
@@ -264,17 +266,17 @@ export function MFACard() {
         >
           <p className="text-xs text-ink-2">
             {ad
-              ? 'Contas do Active Directory mantêm a verificação ligada. Trocou de celular? Peça a um administrador para zerar o MFA e cadastre de novo.'
-              : <>Para desligar, informe a senha e um código. Perdeu o celular? Um administrador zera o MFA em Usuários, ou rode <code className="font-mono text-ink">sudo heimdalldns mfa-off -user {me?.username}</code> no servidor.</>}
+              ? t('Contas do Active Directory mantêm a verificação ligada. Trocou de celular? Peça a um administrador para zerar o MFA e cadastre de novo.')
+              : <>{t('Para desligar, informe a senha e um código. Perdeu o celular? Um administrador zera o MFA em Usuários, ou rode')}{' '}<code className="font-mono text-ink">sudo heimdalldns mfa-off -user {me?.username}</code>{' '}{t('no servidor.')}</>}
           </p>
           <div className={ad ? 'hidden' : 'grid gap-3 sm:grid-cols-2'}>
-            <Input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="Senha" autoComplete="current-password" required={!ad} />
-            <Input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Código" inputMode="numeric" required />
+            <Input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder={t('Senha')} autoComplete="current-password" required={!ad} />
+            <Input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder={t('Código')} inputMode="numeric" required />
           </div>
           <ErrorNote error={disable.error} />
           {!ad && (
             <Button type="submit" loading={disable.isPending}>
-              Desligar
+              {t('Desligar')}
             </Button>
           )}
         </form>
@@ -286,25 +288,25 @@ export function MFACard() {
             enable.mutate()
           }}
         >
-          <p className="text-xs text-ink-2">Leia o QR code no aplicativo autenticador (Google Authenticator, Microsoft Authenticator, Aegis…) e digite o código.</p>
+          <p className="text-xs text-ink-2">{t('Leia o QR code no aplicativo autenticador (Google Authenticator, Microsoft Authenticator, Aegis…) e digite o código.')}</p>
           <div className="flex flex-wrap items-center gap-4">
-            <img src={setup.qr} alt="QR code do segredo" className="size-40 rounded-lg bg-white p-1" />
+            <img src={setup.qr} alt={t('QR code do segredo')} className="size-40 rounded-lg bg-white p-1" />
             <div className="min-w-0 text-xs">
-              <p className="text-muted">Ou digite o segredo:</p>
+              <p className="text-muted">{t('Ou digite o segredo:')}</p>
               <code className="font-mono break-all text-ink">{setup.secret}</code>
             </div>
           </div>
-          <Input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Código de 6 dígitos" inputMode="numeric" autoComplete="one-time-code" required />
+          <Input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder={t('Código de 6 dígitos')} inputMode="numeric" autoComplete="one-time-code" required />
           <ErrorNote error={enable.error} />
           <Button type="submit" variant="primary" loading={enable.isPending}>
-            Confirmar e ligar
+            {t('Confirmar e ligar')}
           </Button>
         </form>
       ) : (
         <>
           <ErrorNote error={start.error} />
           <Button variant="primary" loading={start.isPending} onClick={() => start.mutate()}>
-            Ligar verificação em duas etapas
+            {t('Ligar verificação em duas etapas')}
           </Button>
         </>
       )}
@@ -319,7 +321,7 @@ export function PasswordForm() {
   const [ok, setOk] = useState(false)
   const change = useMutation({
     mutationFn: () => {
-      if (pw !== pw2) throw new Error('As senhas novas não conferem.')
+      if (pw !== pw2) throw new Error(t('As senhas novas não conferem.'))
       return api('/api/auth/password', { method: 'POST', body: { current, password: pw } })
     },
     onSuccess: () => {
@@ -330,7 +332,7 @@ export function PasswordForm() {
     },
   })
   return (
-    <Card title="Trocar a senha" subtitle="Encerra as outras sessões abertas">
+    <Card title={t('Trocar a senha')} subtitle={t('Encerra as outras sessões abertas')}>
       <form
         className="space-y-3"
         onSubmit={(e) => {
@@ -339,21 +341,21 @@ export function PasswordForm() {
           change.mutate()
         }}
       >
-        <Field label="Senha atual">
+        <Field label={t('Senha atual')}>
           <Input type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} required />
         </Field>
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Nova senha" hint="Pelo menos 8 caracteres.">
+          <Field label={t('Nova senha')} hint={t('Pelo menos 8 caracteres.')}>
             <Input type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} minLength={8} required />
           </Field>
-          <Field label="Repita a nova senha">
+          <Field label={t('Repita a nova senha')}>
             <Input type="password" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} minLength={8} required />
           </Field>
         </div>
         <ErrorNote error={change.error} />
-        {ok && <p className="text-xs text-good-ink">Senha alterada.</p>}
+        {ok && <p className="text-xs text-good-ink">{t('Senha alterada.')}</p>}
         <Button type="submit" variant="primary" loading={change.isPending}>
-          Trocar senha
+          {t('Trocar senha')}
         </Button>
       </form>
     </Card>

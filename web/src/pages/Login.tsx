@@ -4,6 +4,8 @@ import { KeyRound } from 'lucide-react'
 import { api, ApiError } from '../api'
 import { Button, ErrorNote, Field, Input } from '../components/ui'
 import { Logo } from '../components/Logo'
+import { LangPicker } from '../components/LangPicker'
+import { t } from '../lib/i18n'
 
 export function Login({ setup, adLogin, onDone }: { setup: boolean; adLogin?: boolean; onDone: () => void }) {
   const [code, setCode] = useState('')
@@ -15,7 +17,7 @@ export function Login({ setup, adLogin, onDone }: { setup: boolean; adLogin?: bo
   const m = useMutation({
     mutationFn: () => {
       if (setup) {
-        if (pw !== pw2) throw new Error('As senhas não conferem.')
+        if (pw !== pw2) throw new Error(t('As senhas não conferem.'))
         return api('/api/auth/setup', { method: 'POST', body: { code, username: user, password: pw } })
       }
       return api('/api/auth/login', { method: 'POST', body: { username: user, password: pw, code: otp } })
@@ -35,8 +37,8 @@ export function Login({ setup, adLogin, onDone }: { setup: boolean; adLogin?: bo
         <div className="mb-6 flex flex-col items-center gap-3 text-center">
           <Logo className="size-12" />
           <div>
-            <h1 className="text-xl font-semibold text-ink">HeimdallDNS</h1>
-            <p className="mt-1 text-sm text-ink-2">{setup ? 'Primeiro acesso: crie a conta de administrador' : 'Entre para continuar'}</p>
+            <h1 className="text-xl font-semibold text-ink">{t('HeimdallDNS')}</h1>
+            <p className="mt-1 text-sm text-ink-2">{setup ? t('Primeiro acesso: crie a conta de administrador') : t('Entre para continuar')}</p>
           </div>
         </div>
         <form
@@ -48,17 +50,17 @@ export function Login({ setup, adLogin, onDone }: { setup: boolean; adLogin?: bo
         >
           {setup && (
             <Field
-              label="Código de configuração"
+              label={t('Código de configuração')}
               hint={
                 <>
-                  Está no log do serviço: <code className="font-mono">journalctl -u heimdalldns | grep codigo</code>
+                  {t('Está no log do serviço:')}{' '}<code className="font-mono">journalctl -u heimdalldns | grep codigo</code>
                 </>
               }
             >
               <Input
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
-                placeholder="XXXX-XXXX"
+                placeholder={t('XXXX-XXXX')}
                 autoComplete="one-time-code"
                 className="font-mono tracking-widest uppercase"
                 required
@@ -66,10 +68,10 @@ export function Login({ setup, adLogin, onDone }: { setup: boolean; adLogin?: bo
               />
             </Field>
           )}
-          <Field label="Usuário" hint={!setup && adLogin ? 'Contas do Active Directory também entram (usuario ou usuario@dominio).' : undefined}>
+          <Field label={t('Usuário')} hint={!setup && adLogin ? t('Contas do Active Directory também entram (usuario ou usuario@dominio).') : undefined}>
             <Input value={user} onChange={(e) => setUser(e.target.value)} autoComplete="username" autoCapitalize="none" spellCheck={false} required autoFocus={!setup} />
           </Field>
-          <Field label={setup ? 'Senha' : 'Senha'} hint={setup ? 'Pelo menos 8 caracteres.' : undefined}>
+          <Field label={setup ? t('Senha') : t('Senha')} hint={setup ? t('Pelo menos 8 caracteres.') : undefined}>
             <Input
               type="password"
               value={pw}
@@ -80,7 +82,7 @@ export function Login({ setup, adLogin, onDone }: { setup: boolean; adLogin?: bo
             />
           </Field>
           {!setup && askOtp && (
-            <Field label="Código do aplicativo autenticador">
+            <Field label={t('Código do aplicativo autenticador')}>
               <Input
                 value={otp}
                 onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
@@ -94,15 +96,18 @@ export function Login({ setup, adLogin, onDone }: { setup: boolean; adLogin?: bo
             </Field>
           )}
           {setup && (
-            <Field label="Repita a senha">
+            <Field label={t('Repita a senha')}>
               <Input type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} autoComplete="new-password" minLength={8} required />
             </Field>
           )}
           {!needsOtpNow && <ErrorNote error={m.error} />}
           <Button type="submit" variant="primary" className="w-full" loading={m.isPending} icon={<KeyRound className="size-4" />}>
-            {setup ? 'Criar e entrar' : 'Entrar'}
+            {setup ? t('Criar e entrar') : t('Entrar')}
           </Button>
         </form>
+        <div className="mt-4 flex justify-center">
+          <LangPicker />
+        </div>
       </div>
     </div>
   )

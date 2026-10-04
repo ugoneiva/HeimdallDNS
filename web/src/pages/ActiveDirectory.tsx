@@ -5,6 +5,7 @@ import { api, qs } from '../api'
 import type { ADGroup, ADInfo, ADRecord, ADUser, ADZone, AuditEntry } from '../types'
 import { ago, fmtDateTime } from '../lib/format'
 import { Button, Card, ErrorNote, Field, Input, Modal, Segmented, Select, StatusBadge, cx } from '../components/ui'
+import { t } from '../lib/i18n'
 
 export function useADInfo() {
   return useQuery({ queryKey: ['ad-info'], queryFn: () => api<ADInfo>('/api/ad/info'), retry: false, refetchInterval: 60_000 })
@@ -13,47 +14,47 @@ export function useADInfo() {
 type Tab = 'users' | 'groups' | 'dns' | 'audit'
 
 const actionLabel: Record<string, string> = {
-  'ad.user.create': 'Criou usuário',
-  'ad.user.enable': 'Habilitou usuário',
-  'ad.user.disable': 'Desabilitou usuário',
-  'ad.user.unlock': 'Desbloqueou usuário',
-  'ad.user.password': 'Redefiniu senha',
-  'ad.user.delete': 'Excluiu usuário',
-  'ad.group.add_member': 'Pôs no grupo',
-  'ad.group.remove_member': 'Tirou do grupo',
-  'ad.dns.add': 'Criou registro DNS',
-  'ad.dns.delete': 'Apagou registro DNS',
-  'auth.login': 'Entrou no painel',
-  'auth.denied': 'Tentou sem permissão',
-  'auth.setup': 'Criou o administrador',
-  'auth.password': 'Trocou a senha',
-  'auth.mfa_enable': 'Ligou o MFA',
-  'auth.mfa_disable': 'Desligou o MFA',
-  'auth.ad_role': 'Papel mudou pelo grupo do AD',
-  'user.create': 'Criou conta',
-  'user.update': 'Alterou conta',
-  'user.delete': 'Excluiu conta',
-  'token.create': 'Criou token de API',
-  'token.delete': 'Revogou token de API',
-  'backup.download': 'Baixou backup',
-  'backup.create': 'Gerou backup',
-  'backup.restore': 'Preparou restauração',
-  'backup.restore_cancel': 'Desistiu da restauração',
-  'service.restart': 'Reiniciou o serviço',
-  'import.pihole': 'Importou do Pi-hole',
-  'dns.local.update': 'Alterou registros locais',
-  'dns.upstream.update': 'Trocou os upstreams',
-  'dns.upstream.reset': 'Voltou aos upstreams do arquivo',
-  'POST /api/clients/{ref}/isolate': 'Isolou dispositivo',
-  'POST /api/clients/{ref}/release': 'Liberou dispositivo',
-  'PATCH /api/clients/{ref}': 'Alterou dispositivo',
-  'DELETE /api/clients/{ref}': 'Esqueceu dispositivo',
-  'PUT /api/rules': 'Alterou as regras próprias',
-  'POST /api/rules/quick': 'Regra rápida',
-  'POST /api/lists': 'Adicionou lista',
-  'PATCH /api/lists/{id}': 'Alterou lista',
-  'DELETE /api/lists/{id}': 'Removeu lista',
-  'PUT /api/security/settings': 'Alterou a segurança',
+  'ad.user.create': t('Criou usuário'),
+  'ad.user.enable': t('Habilitou usuário'),
+  'ad.user.disable': t('Desabilitou usuário'),
+  'ad.user.unlock': t('Desbloqueou usuário'),
+  'ad.user.password': t('Redefiniu senha'),
+  'ad.user.delete': t('Excluiu usuário'),
+  'ad.group.add_member': t('Pôs no grupo'),
+  'ad.group.remove_member': t('Tirou do grupo'),
+  'ad.dns.add': t('Criou registro DNS'),
+  'ad.dns.delete': t('Apagou registro DNS'),
+  'auth.login': t('Entrou no painel'),
+  'auth.denied': t('Tentou sem permissão'),
+  'auth.setup': t('Criou o administrador'),
+  'auth.password': t('Trocou a senha'),
+  'auth.mfa_enable': t('Ligou o MFA'),
+  'auth.mfa_disable': t('Desligou o MFA'),
+  'auth.ad_role': t('Papel mudou pelo grupo do AD'),
+  'user.create': t('Criou conta'),
+  'user.update': t('Alterou conta'),
+  'user.delete': t('Excluiu conta'),
+  'token.create': t('Criou token de API'),
+  'token.delete': t('Revogou token de API'),
+  'backup.download': t('Baixou backup'),
+  'backup.create': t('Gerou backup'),
+  'backup.restore': t('Preparou restauração'),
+  'backup.restore_cancel': t('Desistiu da restauração'),
+  'service.restart': t('Reiniciou o serviço'),
+  'import.pihole': t('Importou do Pi-hole'),
+  'dns.local.update': t('Alterou registros locais'),
+  'dns.upstream.update': t('Trocou os upstreams'),
+  'dns.upstream.reset': t('Voltou aos upstreams do arquivo'),
+  'POST /api/clients/{ref}/isolate': t('Isolou dispositivo'),
+  'POST /api/clients/{ref}/release': t('Liberou dispositivo'),
+  'PATCH /api/clients/{ref}': t('Alterou dispositivo'),
+  'DELETE /api/clients/{ref}': t('Esqueceu dispositivo'),
+  'PUT /api/rules': t('Alterou as regras próprias'),
+  'POST /api/rules/quick': t('Regra rápida'),
+  'POST /api/lists': t('Adicionou lista'),
+  'PATCH /api/lists/{id}': t('Alterou lista'),
+  'DELETE /api/lists/{id}': t('Removeu lista'),
+  'PUT /api/security/settings': t('Alterou a segurança'),
 }
 
 export function ActiveDirectory() {
@@ -61,33 +62,33 @@ export function ActiveDirectory() {
   const [tab, setTab] = useState<Tab>('users')
   const d = info.data
   if (info.error) return <ErrorNote error={info.error} />
-  if (!d) return <p className="text-sm text-muted">Conectando ao AD…</p>
+  if (!d) return <p className="text-sm text-muted">{t('Conectando ao AD…')}</p>
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-surface px-4 py-3 text-xs text-ink-2">
         <span>
-          Domínio <strong className="text-ink">{d.info.domain}</strong> em <span className="font-mono">{d.info.dns_host_name}</span>
+          {t('Domínio')}{' '}<strong className="text-ink">{d.info.domain}</strong>{' '}{t('em')}{' '}<span className="font-mono">{d.info.dns_host_name}</span>
         </span>
-        <StatusBadge tone="neutral">{d.info.vendor === 'Samba' ? 'Samba AD' : 'Windows AD'}</StatusBadge>
+        <StatusBadge tone="neutral">{d.info.vendor === 'Samba' ? t('Samba AD') : t('Windows AD')}</StatusBadge>
         <span className="ml-auto">
           {!d.info.write ? (
-            <StatusBadge tone="neutral">Somente leitura (ad.write desligado)</StatusBadge>
+            <StatusBadge tone="neutral">{t('Somente leitura (ad.write desligado)')}</StatusBadge>
           ) : !d.mfa ? (
-            <StatusBadge tone="warning">Ligue o MFA em Configurações para alterar o AD</StatusBadge>
+            <StatusBadge tone="warning">{t('Ligue o MFA em Configurações para alterar o AD')}</StatusBadge>
           ) : (
-            <StatusBadge tone="good">Alterações liberadas (com auditoria)</StatusBadge>
+            <StatusBadge tone="good">{t('Alterações liberadas (com auditoria)')}</StatusBadge>
           )}
         </span>
       </div>
       <Segmented
-        label="Seção"
+        label={t('Seção')}
         value={tab}
         onChange={setTab}
         options={[
-          { value: 'users', label: 'Usuários' },
-          { value: 'groups', label: 'Grupos' },
-          { value: 'dns', label: 'DNS' },
-          { value: 'audit', label: 'Auditoria' },
+          { value: 'users', label: t('Usuários') },
+          { value: 'groups', label: t('Grupos') },
+          { value: 'dns', label: t('DNS') },
+          { value: 'audit', label: t('Auditoria') },
         ]}
       />
       {tab === 'users' && <UsersTab ad={d} />}
@@ -133,10 +134,10 @@ function UsersTab({ ad }: { ad: ADInfo }) {
   return (
     <Card pad={false}>
       <div className="flex flex-wrap items-center gap-3 border-b border-line p-4">
-        <SearchBox value={q} onChange={setQ} placeholder="Login, nome ou e-mail…" />
+        <SearchBox value={q} onChange={setQ} placeholder={t('Login, nome ou e-mail…')} />
         {ad.can_write && ad.policy.user_ous.length > 0 && (
           <Button variant="primary" className="ml-auto" icon={<UserPlus className="size-4" />} onClick={() => setCreating(true)}>
-            Novo usuário
+            {t('Novo usuário')}
           </Button>
         )}
       </div>
@@ -145,10 +146,10 @@ function UsersTab({ ad }: { ad: ADInfo }) {
         <table className="w-full min-w-[860px] text-sm">
           <thead className="text-left text-xs text-muted">
             <tr className="border-b border-line">
-              <th className="px-4 py-2.5 font-medium">Usuário</th>
-              <th className="px-3 py-2.5 font-medium">Situação</th>
-              <th className="px-3 py-2.5 font-medium">Último logon</th>
-              <th className="px-3 py-2.5 font-medium">Grupos</th>
+              <th className="px-4 py-2.5 font-medium">{t('Usuário')}</th>
+              <th className="px-3 py-2.5 font-medium">{t('Situação')}</th>
+              <th className="px-3 py-2.5 font-medium">{t('Último logon')}</th>
+              <th className="px-3 py-2.5 font-medium">{t('Grupos')}</th>
               <th className="px-3 py-2.5" />
             </tr>
           </thead>
@@ -161,9 +162,9 @@ function UsersTab({ ad }: { ad: ADInfo }) {
                 </td>
                 <td className="px-3 py-2.5">
                   <span className="flex flex-wrap gap-1">
-                    {u.enabled ? <StatusBadge tone="good">Ativo</StatusBadge> : <StatusBadge tone="neutral">Desabilitado</StatusBadge>}
-                    {u.locked && <StatusBadge tone="critical">Bloqueado</StatusBadge>}
-                    {u.privileged && <StatusBadge tone="warning">Privilegiado</StatusBadge>}
+                    {u.enabled ? <StatusBadge tone="good">{t('Ativo')}</StatusBadge> : <StatusBadge tone="neutral">{t('Desabilitado')}</StatusBadge>}
+                    {u.locked && <StatusBadge tone="critical">{t('Bloqueado')}</StatusBadge>}
+                    {u.privileged && <StatusBadge tone="warning">{t('Privilegiado')}</StatusBadge>}
                   </span>
                 </td>
                 <td className="px-3 py-2.5 text-xs text-ink-2">{u.last_logon ? ago(u.last_logon) : 'nunca'}</td>
@@ -173,18 +174,18 @@ function UsersTab({ ad }: { ad: ADInfo }) {
                     <span className="flex flex-wrap justify-end gap-1">
                       <Button size="sm" variant="ghost" icon={u.enabled ? <UserX className="size-3.5" /> : <UserCheck className="size-3.5" />}
                         onClick={() => act.mutate({ u, path: u.enabled ? '/disable' : '/enable', method: 'POST' })}>
-                        {u.enabled ? 'Desabilitar' : 'Habilitar'}
+                        {u.enabled ? t('Desabilitar') : t('Habilitar')}
                       </Button>
                       {u.locked && (
                         <Button size="sm" variant="ghost" icon={<LockOpen className="size-3.5" />} onClick={() => act.mutate({ u, path: '/unlock', method: 'POST' })}>
-                          Desbloquear
+                          {t('Desbloquear')}
                         </Button>
                       )}
                       <Button size="sm" variant="ghost" icon={<KeyRound className="size-3.5" />} onClick={() => setPwFor(u)}>
-                        Senha
+                        {t('Senha')}
                       </Button>
                       <Button size="sm" variant="ghost" icon={<Users className="size-3.5" />} onClick={() => setGroupsFor(u)}>
-                        Grupos
+                        {t('Grupos')}
                       </Button>
                       <Button
                         size="sm"
@@ -193,18 +194,18 @@ function UsersTab({ ad }: { ad: ADInfo }) {
                         onBlur={() => setConfirmDel(null)}
                         onClick={() => (confirmDel === u.sam ? act.mutate({ u, path: '', method: 'DELETE' }) : setConfirmDel(u.sam))}
                       >
-                        {confirmDel === u.sam ? 'Excluir' : ''}
+                        {confirmDel === u.sam ? t('Excluir') : ''}
                       </Button>
                     </span>
                   ) : (
-                    <span className="block text-right text-[11px] text-muted">{u.privileged ? 'protegido' : ad.can_write ? 'fora das OUs liberadas' : ''}</span>
+                    <span className="block text-right text-[11px] text-muted">{u.privileged ? 'protegido' : ad.can_write ? t('fora das OUs liberadas') : ''}</span>
                   )}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
-        {!users.isLoading && list.length === 0 && <p className="py-8 text-center text-sm text-muted">Nenhum usuário encontrado.</p>}
+        {!users.isLoading && list.length === 0 && <p className="py-8 text-center text-sm text-muted">{t('Nenhum usuário encontrado.')}</p>}
       </div>
       <NewUserModal open={creating} onClose={() => setCreating(false)} ous={ad.policy.user_ous} />
       <PasswordModal user={pwFor} onClose={() => setPwFor(null)} />
@@ -226,40 +227,40 @@ function NewUserModal({ open, onClose, ous }: { open: boolean; onClose: () => vo
     },
   })
   return (
-    <Modal open={open} onClose={onClose} title="Novo usuário no AD">
+    <Modal open={open} onClose={onClose} title={t('Novo usuário no AD')}>
       <form className="space-y-3" onSubmit={(e) => (e.preventDefault(), create.mutate())}>
-        <Field label="OU">
-          <Select label="OU" value={f.ou} onChange={(ou) => setF({ ...f, ou })} className="w-full" options={ous.map((o) => ({ value: o, label: o }))} />
+        <Field label={t('OU')}>
+          <Select label={t('OU')} value={f.ou} onChange={(ou) => setF({ ...f, ou })} className="w-full" options={ous.map((o) => ({ value: o, label: o }))} />
         </Field>
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Nome">
+          <Field label={t('Nome')}>
             <Input value={f.given_name} onChange={(e) => setF({ ...f, given_name: e.target.value })} required />
           </Field>
-          <Field label="Sobrenome">
+          <Field label={t('Sobrenome')}>
             <Input value={f.surname} onChange={(e) => setF({ ...f, surname: e.target.value })} />
           </Field>
-          <Field label="Login (sAMAccountName)" hint="Até 20 caracteres, sem espaços.">
+          <Field label={t('Login (sAMAccountName)')} hint={t('Até 20 caracteres, sem espaços.')}>
             <Input value={f.sam} onChange={(e) => setF({ ...f, sam: e.target.value })} required maxLength={20} />
           </Field>
-          <Field label="E-mail">
+          <Field label={t('E-mail')}>
             <Input type="email" value={f.mail} onChange={(e) => setF({ ...f, mail: e.target.value })} />
           </Field>
         </div>
-        <Field label="Senha inicial" hint="Precisa passar na política de senha do domínio.">
+        <Field label={t('Senha inicial')} hint={t('Precisa passar na política de senha do domínio.')}>
           <Input type="password" autoComplete="new-password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} required />
         </Field>
         <label className="flex items-center gap-2 text-xs text-ink-2">
           <input type="checkbox" checked={f.must_change} onChange={(e) => setF({ ...f, must_change: e.target.checked })} />
-          Trocar a senha no primeiro logon
+          {t('Trocar a senha no primeiro logon')}
         </label>
         <label className="flex items-center gap-2 text-xs text-ink-2">
           <input type="checkbox" checked={f.enabled} onChange={(e) => setF({ ...f, enabled: e.target.checked })} />
-          Criar já habilitado
+          {t('Criar já habilitado')}
         </label>
         <ErrorNote error={create.error} />
         <div className="flex justify-end">
           <Button type="submit" variant="primary" loading={create.isPending}>
-            Criar usuário
+            {t('Criar usuário')}
           </Button>
         </div>
       </form>
@@ -280,20 +281,20 @@ function PasswordModal({ user, onClose }: { user: ADUser | null; onClose: () => 
     },
   })
   return (
-    <Modal open={!!user} onClose={onClose} title={`Redefinir senha de ${user?.sam ?? ''}`}>
+    <Modal open={!!user} onClose={onClose} title={t('Redefinir senha de {nome}', { nome: user?.sam ?? '' })}>
       <form className="space-y-3" onSubmit={(e) => (e.preventDefault(), save.mutate())}>
-        <Field label="Nova senha">
+        <Field label={t('Nova senha')}>
           <Input type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} required />
         </Field>
         <label className="flex items-center gap-2 text-xs text-ink-2">
           <input type="checkbox" checked={must} onChange={(e) => setMust(e.target.checked)} />
-          Trocar no próximo logon
+          {t('Trocar no próximo logon')}
         </label>
-        <p className="text-[11px] text-muted">A senha não é guardada nem vai para a auditoria; só fica registrado que houve a troca.</p>
+        <p className="text-[11px] text-muted">{t('A senha não é guardada nem vai para a auditoria; só fica registrado que houve a troca.')}</p>
         <ErrorNote error={save.error} />
         <div className="flex justify-end">
           <Button type="submit" variant="primary" loading={save.isPending}>
-            Redefinir
+            {t('Redefinir')}
           </Button>
         </div>
       </form>
@@ -317,8 +318,8 @@ function UserGroupsModal({ user, onClose, managed }: { user: ADUser | null; onCl
   })
   const groups = fresh.data?.groups ?? user?.groups ?? []
   return (
-    <Modal open={!!user} onClose={onClose} title={`Grupos de ${user?.sam ?? ''}`}>
-      <p className="mb-3 text-xs text-ink-2">Só os grupos liberados em ad.managed_groups aparecem aqui. Grupos privilegiados nunca são alterados.</p>
+    <Modal open={!!user} onClose={onClose} title={t('Grupos de {nome}', { nome: user?.sam ?? '' })}>
+      <p className="mb-3 text-xs text-ink-2">{t('Só os grupos liberados em ad.managed_groups aparecem aqui. Grupos privilegiados nunca são alterados.')}</p>
       <ul className="divide-y divide-line">
         {managed.map((g) => {
           const member = groups.some((x) => x.toLowerCase() === g.toLowerCase())
@@ -331,7 +332,7 @@ function UserGroupsModal({ user, onClose, managed }: { user: ADUser | null; onCl
                 loading={toggle.isPending && toggle.variables?.group === g}
                 onClick={() => toggle.mutate({ group: g, add: !member }, { onSuccess: () => fresh.refetch() })}
               >
-                {member ? 'Tirar' : 'Colocar'}
+                {member ? t('Tirar') : t('Colocar')}
               </Button>
             </li>
           )
@@ -351,7 +352,7 @@ function GroupsTab({ ad }: { ad: ADInfo }) {
     <div className="grid gap-5 lg:grid-cols-[1fr_1fr]">
       <Card pad={false}>
         <div className="border-b border-line p-4">
-          <SearchBox value={q} onChange={setQ} placeholder="Nome do grupo…" />
+          <SearchBox value={q} onChange={setQ} placeholder={t('Nome do grupo…')} />
         </div>
         <ErrorNote error={groups.error} />
         <ul className="max-h-[60vh] divide-y divide-line overflow-y-auto">
@@ -360,14 +361,14 @@ function GroupsTab({ ad }: { ad: ADInfo }) {
               <button onClick={() => setOpen(g.name)} className={cx('flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm hover:bg-surface-2', open === g.name && 'bg-surface-2')}>
                 <span className="flex-1 text-ink">{g.name}</span>
                 <span className="text-xs text-muted">{g.members}</span>
-                {g.privileged && <StatusBadge tone="warning">Privilegiado</StatusBadge>}
-                {g.managed && <StatusBadge tone="accent">Liberado</StatusBadge>}
+                {g.privileged && <StatusBadge tone="warning">{t('Privilegiado')}</StatusBadge>}
+                {g.managed && <StatusBadge tone="accent">{t('Liberado')}</StatusBadge>}
               </button>
             </li>
           ))}
         </ul>
       </Card>
-      {open ? <GroupDetail name={open} canWrite={ad.can_write} /> : <Card><p className="text-sm text-muted">Escolha um grupo para ver os membros.</p></Card>}
+      {open ? <GroupDetail name={open} canWrite={ad.can_write} /> : <Card><p className="text-sm text-muted">{t('Escolha um grupo para ver os membros.')}</p></Card>}
     </div>
   )
 }
@@ -389,13 +390,13 @@ function GroupDetail({ name, canWrite }: { name: string; canWrite: boolean }) {
   })
   const editable = canWrite && !!g.data?.group.managed
   return (
-    <Card title={name} subtitle={g.data?.group.description || (editable ? 'Grupo liberado para alteração' : 'Somente leitura')}>
+    <Card title={name} subtitle={g.data?.group.description || (editable ? t('Grupo liberado para alteração') : t('Somente leitura'))}>
       <ErrorNote error={g.error || change.error} />
       {editable && (
         <form className="mb-4 flex gap-2" onSubmit={(e) => (e.preventDefault(), change.mutate({ who: sam.trim(), add: true }))}>
-          <Input value={sam} onChange={(e) => setSam(e.target.value)} placeholder="login do usuário" required />
+          <Input value={sam} onChange={(e) => setSam(e.target.value)} placeholder={t('login do usuário')} required />
           <Button type="submit" variant="primary" icon={<Plus className="size-4" />} loading={change.isPending}>
-            Colocar
+            {t('Colocar')}
           </Button>
         </form>
       )}
@@ -405,13 +406,13 @@ function GroupDetail({ name, canWrite }: { name: string; canWrite: boolean }) {
             <span className="text-ink">{m}</span>
             {editable && (
               <Button size="sm" variant="ghost" onClick={() => change.mutate({ who: m, add: false })}>
-                Tirar
+                {t('Tirar')}
               </Button>
             )}
           </li>
         ))}
       </ul>
-      {g.data && g.data.members.length === 0 && <p className="text-sm text-muted">Sem membros.</p>}
+      {g.data && g.data.members.length === 0 && <p className="text-sm text-muted">{t('Sem membros.')}</p>}
     </Card>
   )
 }
@@ -441,10 +442,10 @@ function DNSTab({ ad }: { ad: ADInfo }) {
     <Card pad={false}>
       <div className="flex flex-wrap items-center gap-3 border-b border-line p-4">
         <Select
-          label="Zona"
+          label={t('Zona')}
           value={zone}
           onChange={setZone}
-          options={(zones.data ?? []).map((x) => ({ value: x.name, label: `${x.name}${x.editable ? '' : ' (somente leitura)'}` }))}
+          options={(zones.data ?? []).map((x) => ({ value: x.name, label: `${x.name}${x.editable ? '' : t(' (somente leitura)')}` }))}
         />
         {z && <span className="text-xs text-muted">{z.location}</span>}
       </div>
@@ -453,16 +454,16 @@ function DNSTab({ ad }: { ad: ADInfo }) {
           className="grid gap-2 border-b border-line p-4 sm:grid-cols-[1fr_110px_1.4fr_100px_auto]"
           onSubmit={(e) => (e.preventDefault(), change.mutate({ add: true, r: f }, { onSuccess: () => setF({ ...f, name: '', data: '' }) }))}
         >
-          <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder={`nome (vira nome.${zone})`} required />
-          <Select label="Tipo" value={f.type} onChange={(type) => setF({ ...f, type })} options={['A', 'AAAA', 'CNAME', 'PTR'].map((t) => ({ value: t, label: t }))} />
-          <Input value={f.data} onChange={(e) => setF({ ...f, data: e.target.value })} placeholder={f.type === 'CNAME' || f.type === 'PTR' ? 'destino.empresa.local' : 'IP'} required />
-          <Input type="number" min={60} value={f.ttl} onChange={(e) => setF({ ...f, ttl: Number(e.target.value) })} aria-label="TTL" />
+          <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder={t('nome (vira nome.{zona})', { zona: zone })} required />
+          <Select label={t('Tipo')} value={f.type} onChange={(type) => setF({ ...f, type })} options={['A', 'AAAA', 'CNAME', 'PTR'].map((t) => ({ value: t, label: t }))} />
+          <Input value={f.data} onChange={(e) => setF({ ...f, data: e.target.value })} placeholder={f.type === 'CNAME' || f.type === 'PTR' ? 'destino.empresa.local' : t('IP')} required />
+          <Input type="number" min={60} value={f.ttl} onChange={(e) => setF({ ...f, ttl: Number(e.target.value) })} aria-label={t('TTL')} />
           <Button type="submit" variant="primary" icon={<Plus className="size-4" />} loading={change.isPending}>
-            Criar
+            {t('Criar')}
           </Button>
           {ad.info.vendor !== 'Samba' && (
             <p className="col-span-full text-[11px] text-muted">
-              No AD do Windows, o servidor DNS lê as mudanças do AD periodicamente: o registro pode levar alguns minutos para responder.
+              {t('No AD do Windows, o servidor DNS lê as mudanças do AD periodicamente: o registro pode levar alguns minutos para responder.')}
             </p>
           )}
         </form>
@@ -472,10 +473,10 @@ function DNSTab({ ad }: { ad: ADInfo }) {
         <table className="w-full min-w-[640px] text-sm">
           <thead className="text-left text-xs text-muted">
             <tr className="border-b border-line">
-              <th className="px-4 py-2.5 font-medium">Nome</th>
-              <th className="px-3 py-2.5 font-medium">Tipo</th>
-              <th className="px-3 py-2.5 font-medium">Valor</th>
-              <th className="px-3 py-2.5 text-right font-medium">TTL</th>
+              <th className="px-4 py-2.5 font-medium">{t('Nome')}</th>
+              <th className="px-3 py-2.5 font-medium">{t('Tipo')}</th>
+              <th className="px-3 py-2.5 font-medium">{t('Valor')}</th>
+              <th className="px-3 py-2.5 text-right font-medium">{t('TTL')}</th>
               <th className="w-24 px-3 py-2.5" />
             </tr>
           </thead>
@@ -488,7 +489,7 @@ function DNSTab({ ad }: { ad: ADInfo }) {
                 <td className="tabular px-3 py-2 text-right text-xs text-ink-2">{r.ttl}</td>
                 <td className="px-3 py-2 text-right">
                   {canDelete(r) && (
-                    <Button size="sm" variant="ghost" icon={<Trash className="size-3.5" />} onClick={() => change.mutate({ add: false, r: { name: r.name, type: r.type, data: r.data } })} aria-label={`Apagar ${r.name} ${r.type}`} />
+                    <Button size="sm" variant="ghost" icon={<Trash className="size-3.5" />} onClick={() => change.mutate({ add: false, r: { name: r.name, type: r.type, data: r.data } })} aria-label={t('Apagar {nome} {tipo}', { nome: r.name, tipo: r.type })} />
                   )}
                 </td>
               </tr>
@@ -503,13 +504,13 @@ function DNSTab({ ad }: { ad: ADInfo }) {
 export function AuditTab() {
   const audit = useQuery({ queryKey: ['audit'], queryFn: () => api<AuditEntry[]>('/api/audit?range=90d&limit=300'), refetchInterval: 15_000 })
   return (
-    <Card pad={false} title="Auditoria" subtitle="Toda alteração e todo login ficam registrados (e vão para o SIEM, se a exportação estiver ligada)">
+    <Card pad={false} title={t('Auditoria')} subtitle={t('Toda alteração e todo login ficam registrados (e vão para o SIEM, se a exportação estiver ligada)')}>
       <ErrorNote error={audit.error} />
       <ul className="divide-y divide-line">
         {(audit.data ?? []).map((e) => (
           <li key={e.id} className="flex flex-wrap items-start gap-x-4 gap-y-1 px-4 py-2.5 text-xs sm:px-5">
             <span className="w-32 shrink-0 text-ink-2">{fmtDateTime(e.time)}</span>
-            <span className="w-20 shrink-0">{e.ok ? <StatusBadge tone="good">ok</StatusBadge> : <StatusBadge tone="critical">recusado</StatusBadge>}</span>
+            <span className="w-20 shrink-0">{e.ok ? <StatusBadge tone="good">{t('ok')}</StatusBadge> : <StatusBadge tone="critical">{t('recusado')}</StatusBadge>}</span>
             <span className="min-w-0 flex-1">
               <strong className="text-ink">{actionLabel[e.action] ?? e.action}</strong> <span className="font-mono text-ink">{e.target}</span>
               {e.details && Object.keys(e.details).length > 0 && (
@@ -528,7 +529,7 @@ export function AuditTab() {
           </li>
         ))}
       </ul>
-      {audit.data?.length === 0 && <p className="py-8 text-center text-sm text-muted">Nenhuma alteração registrada.</p>}
+      {audit.data?.length === 0 && <p className="py-8 text-center text-sm text-muted">{t('Nenhuma alteração registrada.')}</p>}
     </Card>
   )
 }

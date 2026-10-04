@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api'
 import type { AuthState, Role } from '../types'
+import { t } from './i18n'
 
 export function useAuth() {
   return useQuery({ queryKey: ['auth'], queryFn: () => api<AuthState>('/api/auth/state'), retry: 1 })
@@ -14,9 +15,9 @@ export function useCan(need: Role): boolean {
   return !!role && rank[role] >= rank[need]
 }
 
-export const roleLabel: Record<Role, string> = { admin: 'Administrador', operator: 'Operador', viewer: 'Leitura' }
+export const roleLabel: Record<Role, string> = { admin: t('Administrador'), operator: t('Operador'), viewer: t('Leitura') }
 export const roleNote: Record<Role, string> = {
-  admin: 'Tudo, inclusive usuários, backup e configuração',
-  operator: 'Opera dispositivos, alertas e reservas; não muda a configuração',
-  viewer: 'Só vê',
+  admin: t('Tudo, inclusive usuários, backup e configuração'),
+  operator: t('Opera dispositivos, alertas e reservas; não muda a configuração'),
+  viewer: t('Só vê'),
 }

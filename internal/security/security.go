@@ -147,7 +147,9 @@ func New(opts Options) (*Manager, error) {
 // Settings devolve as opções em vigor (cópia).
 func (m *Manager) Settings() Settings {
 	s := *m.settings.Load()
-	s.AutoIsolate, s.Ignore = slices.Clone(s.AutoIsolate), slices.Clone(s.Ignore)
+	// Listas nunca saem como null no JSON (o painel faz .join nelas).
+	s.AutoIsolate = append([]string{}, s.AutoIsolate...)
+	s.Ignore = append([]string{}, s.Ignore...)
 	return s
 }
 

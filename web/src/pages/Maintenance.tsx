@@ -5,8 +5,9 @@ import { api, download, upload, ApiError } from '../api'
 import type { BackupList, PiholePreview, PiholeResult, RestoreState } from '../types'
 import { fmtDateTime, fmtInt } from '../lib/format'
 import { Button, Card, ErrorNote, Field, Input, LabeledSwitch, StatusBadge } from '../components/ui'
+import { locale, t } from '../lib/i18n'
 
-const mb = (n: number) => (n / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' MB'
+const mb = (n: number) => (n / 1e6).toLocaleString(locale, { maximumFractionDigits: 1 }) + ' MB'
 
 export function BackupCard() {
   const qc = useQueryClient()
@@ -24,15 +25,15 @@ export function BackupCard() {
   })
 
   return (
-    <Card title="Backup" subtitle="Banco (dispositivos, listas, regras, alertas, configurações do painel) e o arquivo de configuração">
+    <Card title={t('Backup')} subtitle={t('Banco (dispositivos, listas, regras, alertas, configurações do painel) e o arquivo de configuração')}>
       <div className="space-y-3">
-        <LabeledSwitch checked={encrypt} onChange={setEncrypt} label="Cifrar com senha (recomendado: o backup leva o hash da senha do painel e os tokens)" />
+        <LabeledSwitch checked={encrypt} onChange={setEncrypt} label={t('Cifrar com senha (recomendado: o backup leva o hash da senha do painel e os tokens)')} />
         {encrypt && (
-          <Field label="Senha do backup" hint="10 caracteres ou mais. Sem ela não há como restaurar; guarde num cofre de senhas.">
+          <Field label={t('Senha do backup')} hint={t('10 caracteres ou mais. Sem ela não há como restaurar; guarde num cofre de senhas.')}>
             <Input type="password" autoComplete="new-password" value={pass} onChange={(e) => setPass(e.target.value)} />
           </Field>
         )}
-        <LabeledSwitch checked={full} onChange={setFull} label="Incluir o histórico de consultas (arquivo bem maior)" />
+        <LabeledSwitch checked={full} onChange={setFull} label={t('Incluir o histórico de consultas (arquivo bem maior)')} />
         <ErrorNote error={dl.error} />
         <Button
           variant="primary"
@@ -41,17 +42,17 @@ export function BackupCard() {
           disabled={encrypt && pass.length < 10}
           onClick={() => dl.mutate()}
         >
-          Baixar backup
+          {t('Baixar backup')}
         </Button>
       </div>
 
       <div className="mt-6 border-t border-line pt-4">
         <div className="mb-2 flex items-center gap-2">
           <History className="size-4 text-muted" aria-hidden />
-          <p className="text-xs font-semibold text-ink">Cópias automáticas no servidor</p>
-          {list.data && (list.data.auto ? <StatusBadge tone="good">diárias</StatusBadge> : <StatusBadge tone="neutral">desligadas</StatusBadge>)}
+          <p className="text-xs font-semibold text-ink">{t('Cópias automáticas no servidor')}</p>
+          {list.data && (list.data.auto ? <StatusBadge tone="good">{t('diárias')}</StatusBadge> : <StatusBadge tone="neutral">{t('desligadas')}</StatusBadge>)}
           <Button size="sm" variant="ghost" className="ml-auto" loading={now.isPending} onClick={() => now.mutate()}>
-            Gerar agora
+            {t('Gerar agora')}
           </Button>
         </div>
         <ErrorNote error={list.error || now.error} />
@@ -61,13 +62,13 @@ export function BackupCard() {
               <span className="flex-1 text-ink">{fmtDateTime(f.created)}</span>
               <span className="tabular text-ink-2">{mb(f.size)}</span>
               <a className="text-accent hover:underline" href={`/api/backups/${encodeURIComponent(f.name)}`} download>
-                baixar
+                {t('baixar')}
               </a>
             </li>
           ))}
         </ul>
-        {list.data?.files.length === 0 && <p className="text-xs text-muted">Nenhuma cópia ainda (a primeira sai 5 minutos depois de ligar).</p>}
-        {list.data && <p className="mt-2 text-[11px] text-muted">Pasta: <span className="font-mono">{list.data.dir}</span>. Copie para fora do servidor também.</p>}
+        {list.data?.files.length === 0 && <p className="text-xs text-muted">{t('Nenhuma cópia ainda (a primeira sai 5 minutos depois de ligar).')}</p>}
+        {list.data && <p className="mt-2 text-[11px] text-muted">{t('Pasta:')}{' '}<span className="font-mono">{list.data.dir}</span>{t('. Copie para fora do servidor também.')}</p>}
       </div>
 
       <div className="mt-6 border-t border-line pt-4">
@@ -120,30 +121,30 @@ function RestoreForm({ state }: { state?: RestoreState }) {
   if (p) {
     return (
       <div className="space-y-3 text-xs">
-        <p className="font-semibold text-ink">Restauração pronta</p>
+        <p className="font-semibold text-ink">{t('Restauração pronta')}</p>
         <p className="text-ink-2">
-          Backup de <strong className="text-ink">{p.hostname}</strong>, versão {p.version}, gerado em {fmtDateTime(p.created)}
-          {p.full ? ', com histórico' : ''}. Vale quando o serviço reiniciar; o banco atual fica guardado ao lado.
+          {t('Backup de')}{' '}<strong className="text-ink">{p.hostname}</strong>{t(', versão')}{' '}{p.version}{t(', gerado em')}{' '}{fmtDateTime(p.created)}
+          {p.full ? t(', com histórico') : ''}{t('. Vale quando o serviço reiniciar; o banco atual fica guardado ao lado.')}
         </p>
         {p.has_config && (
           <p className="text-ink-2">
-            O arquivo de configuração do backup não é aplicado sozinho (ele fica em /etc, fora do alcance do serviço): confira se o atual serve.
+            {t('O arquivo de configuração do backup não é aplicado sozinho (ele fica em /etc, fora do alcance do serviço): confira se o atual serve.')}
           </p>
         )}
         <ErrorNote error={restart.error || cancel.error} />
         {restarting ? (
-          <p className="text-accent">Reiniciando… o painel recarrega sozinho.</p>
+          <p className="text-accent">{t('Reiniciando… o painel recarrega sozinho.')}</p>
         ) : (
           <div className="flex gap-2">
             {state?.can_restart ? (
               <Button variant="primary" icon={<RotateCcw className="size-4" />} loading={restart.isPending} onClick={() => restart.mutate()}>
-                Reiniciar e restaurar agora
+                {t('Reiniciar e restaurar agora')}
               </Button>
             ) : (
-              <p className="text-ink-2">Reinicie o serviço: systemctl restart heimdalldns</p>
+              <p className="text-ink-2">{t('Reinicie o serviço: systemctl restart heimdalldns')}</p>
             )}
             <Button variant="ghost" loading={cancel.isPending} onClick={() => cancel.mutate()}>
-              Desistir
+              {t('Desistir')}
             </Button>
           </div>
         )}
@@ -158,28 +159,28 @@ function RestoreForm({ state }: { state?: RestoreState }) {
         send.mutate()
       }}
     >
-      <p className="text-xs font-semibold text-ink">Restaurar um backup</p>
-      <Input type="file" accept=".gz,.age,.tar.gz" onChange={(e) => setFile(e.target.files?.[0] ?? null)} aria-label="Arquivo de backup" />
+      <p className="text-xs font-semibold text-ink">{t('Restaurar um backup')}</p>
+      <Input type="file" accept=".gz,.age,.tar.gz" onChange={(e) => setFile(e.target.files?.[0] ?? null)} aria-label={t('Arquivo de backup')} />
       {(needPass || file?.name.endsWith('.age')) && (
-        <Field label="Senha do backup">
+        <Field label={t('Senha do backup')}>
           <Input type="password" value={pass} onChange={(e) => setPass(e.target.value)} />
         </Field>
       )}
       <ErrorNote error={send.error} />
       <Button type="submit" icon={<Upload className="size-4" />} loading={send.isPending} disabled={!file}>
-        Conferir e preparar
+        {t('Conferir e preparar')}
       </Button>
     </form>
   )
 }
 
 const sections = [
-  { key: 'lists', label: 'Listas de bloqueio', count: (p: Record<string, number>) => p.lists },
-  { key: 'rules', label: 'Regras próprias (bloqueio e liberação)', count: (p: Record<string, number>) => p.deny + p.allow },
-  { key: 'hosts', label: 'Registros DNS locais', count: (p: Record<string, number>) => p.hosts },
-  { key: 'reservations', label: 'Reservas de DHCP', count: (p: Record<string, number>) => p.reservations },
-  { key: 'upstreams', label: 'Upstreams (servidores DNS de saída)', count: (p: Record<string, number>) => p.upstreams },
-  { key: 'clients', label: 'Nomes dos dispositivos', count: (p: Record<string, number>) => p.clients_found },
+  { key: 'lists', label: t('Listas de bloqueio'), count: (p: Record<string, number>) => p.lists },
+  { key: 'rules', label: t('Regras próprias (bloqueio e liberação)'), count: (p: Record<string, number>) => p.deny + p.allow },
+  { key: 'hosts', label: t('Registros DNS locais'), count: (p: Record<string, number>) => p.hosts },
+  { key: 'reservations', label: t('Reservas de DHCP'), count: (p: Record<string, number>) => p.reservations },
+  { key: 'upstreams', label: t('Upstreams (servidores DNS de saída)'), count: (p: Record<string, number>) => p.upstreams },
+  { key: 'clients', label: t('Nomes dos dispositivos'), count: (p: Record<string, number>) => p.clients_found },
 ] as const
 
 /** Importação do backup do Pi-hole (Teleporter), em duas etapas: prévia e aplicação. */
@@ -206,7 +207,7 @@ export function PiholeImport({ onDone }: { onDone?: () => void }) {
     const r = apply.data.result
     return (
       <div className="space-y-3 text-xs">
-        <p className="font-semibold text-good-ink">Importação concluída</p>
+        <p className="font-semibold text-good-ink">{t('Importação concluída')}</p>
         <ul className="grid gap-1 sm:grid-cols-2">
           {sections.map((s) => (
             <li key={s.key} className="text-ink-2">
@@ -216,7 +217,7 @@ export function PiholeImport({ onDone }: { onDone?: () => void }) {
         </ul>
         {apply.data.notes.length > 0 && (
           <details className="text-ink-2">
-            <summary className="cursor-pointer">{apply.data.notes.length} avisos</summary>
+            <summary className="cursor-pointer">{apply.data.notes.length}{' '}{t('avisos')}</summary>
             <ul className="mt-2 max-h-48 list-disc space-y-0.5 overflow-y-auto pl-5">
               {apply.data.notes.map((n, i) => (
                 <li key={i}>{n}</li>
@@ -232,7 +233,7 @@ export function PiholeImport({ onDone }: { onDone?: () => void }) {
     return (
       <div className="space-y-3 text-xs">
         <p className="text-ink-2">
-          Backup do Pi-hole <strong className="text-ink">{e.version}</strong>. Escolha o que trazer (só entra o que ainda não existe aqui):
+          {t('Backup do Pi-hole')}{' '}<strong className="text-ink">{e.version}</strong>{t('. Escolha o que trazer (só entra o que ainda não existe aqui):')}
         </p>
         <div className="space-y-2">
           {sections.map((s) => (
@@ -240,25 +241,25 @@ export function PiholeImport({ onDone }: { onDone?: () => void }) {
               key={s.key}
               checked={pick[s.key]}
               onChange={(v) => setPick({ ...pick, [s.key]: v })}
-              label={`${s.label}: ${fmtInt(s.count(plan) ?? 0)}${s.key === 'upstreams' && e.upstreams.length ? ` (${e.upstreams.join(', ')})` : ''}${s.key === 'clients' ? ` de ${plan.clients} (só os já vistos aqui)` : ''}`}
+              label={`${s.label}: ${fmtInt(s.count(plan) ?? 0)}${s.key === 'upstreams' && e.upstreams.length ? ` (${e.upstreams.join(', ')})` : ''}${s.key === 'clients' ? t(' de {n} (só os já vistos aqui)', { n: plan.clients }) : ''}`}
             />
           ))}
         </div>
         {(plan.allow_lists > 0 || plan.groups > 0 || plan.skipped > 0) && (
           <ul className="list-disc space-y-0.5 pl-5 text-muted">
-            {plan.allow_lists > 0 && <li>{plan.allow_lists} listas de liberação não têm equivalente e ficam de fora.</li>}
-            {plan.groups > 0 && <li>{plan.groups} grupos do Pi-hole não são migrados; use as regras por dispositivo.</li>}
-            {plan.skipped > 0 && <li>{plan.skipped} itens não puderam ser convertidos (detalhes no fim).</li>}
-            <li>Domínio exato do Pi-hole vira "domínio e subdomínios" aqui.</li>
+            {plan.allow_lists > 0 && <li>{plan.allow_lists}{' '}{t('listas de liberação não têm equivalente e ficam de fora.')}</li>}
+            {plan.groups > 0 && <li>{plan.groups}{' '}{t('grupos do Pi-hole não são migrados; use as regras por dispositivo.')}</li>}
+            {plan.skipped > 0 && <li>{plan.skipped}{' '}{t('itens não puderam ser convertidos (detalhes no fim).')}</li>}
+            <li>{t('Domínio exato do Pi-hole vira "domínio e subdomínios" aqui.')}</li>
           </ul>
         )}
         <ErrorNote error={apply.error} />
         <div className="flex gap-2">
           <Button variant="primary" loading={apply.isPending} onClick={() => apply.mutate()}>
-            Importar
+            {t('Importar')}
           </Button>
           <Button variant="ghost" onClick={() => preview.reset()}>
-            Outro arquivo
+            {t('Outro arquivo')}
           </Button>
         </div>
       </div>
@@ -273,12 +274,12 @@ export function PiholeImport({ onDone }: { onDone?: () => void }) {
       }}
     >
       <p className="text-xs text-ink-2">
-        No Pi-hole: <strong>Settings → Teleporter → Export</strong> (v6 gera um .zip; a v5, um .tar.gz). Nada é aplicado antes da prévia.
+        {t('No Pi-hole:')}{' '}<strong>{t('Settings → Teleporter → Export')}</strong>{' '}{t('(v6 gera um .zip; a v5, um .tar.gz). Nada é aplicado antes da prévia.')}
       </p>
-      <Input type="file" accept=".zip,.gz,.tar.gz" onChange={(e) => setFile(e.target.files?.[0] ?? null)} aria-label="Arquivo do Teleporter" />
+      <Input type="file" accept=".zip,.gz,.tar.gz" onChange={(e) => setFile(e.target.files?.[0] ?? null)} aria-label={t('Arquivo do Teleporter')} />
       <ErrorNote error={preview.error} />
       <Button type="submit" icon={<FileUp className="size-4" />} loading={preview.isPending} disabled={!file}>
-        Ver o que será importado
+        {t('Ver o que será importado')}
       </Button>
     </form>
   )

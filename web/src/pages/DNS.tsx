@@ -4,13 +4,14 @@ import { Plus, RotateCcw, Trash } from 'lucide-react'
 import { api } from '../api'
 import type { LocalRecord, LocalRecords, UpstreamState } from '../types'
 import { Button, Card, ErrorNote, Field, Input, Select, StatusBadge, Textarea, cx } from '../components/ui'
+import { t } from '../lib/i18n'
 
 // Resolvedores públicos conhecidos, todos com criptografia (DoH/DoT).
 export const upstreamPresets = [
-  { id: 'cloudflare', name: 'Cloudflare', note: 'O mais rápido na maioria das redes', servers: ['https://cloudflare-dns.com/dns-query', 'tls://1.1.1.1'] },
-  { id: 'quad9', name: 'Quad9', note: 'Bloqueia domínios maliciosos na origem', servers: ['https://dns.quad9.net/dns-query', 'tls://dns.quad9.net'] },
-  { id: 'google', name: 'Google', note: 'Alta disponibilidade', servers: ['https://dns.google/dns-query', 'tls://dns.google'] },
-  { id: 'adguard', name: 'AdGuard DNS', note: 'Bloqueio extra de anúncios', servers: ['https://dns.adguard-dns.com/dns-query'] },
+  { id: 'cloudflare', name: 'Cloudflare', note: t('O mais rápido na maioria das redes'), servers: ['https://cloudflare-dns.com/dns-query', 'tls://1.1.1.1'] },
+  { id: 'quad9', name: 'Quad9', note: t('Bloqueia domínios maliciosos na origem'), servers: ['https://dns.quad9.net/dns-query', 'tls://dns.quad9.net'] },
+  { id: 'google', name: 'Google', note: t('Alta disponibilidade'), servers: ['https://dns.google/dns-query', 'tls://dns.google'] },
+  { id: 'adguard', name: 'AdGuard DNS', note: t('Bloqueio extra de anúncios'), servers: ['https://dns.adguard-dns.com/dns-query'] },
 ]
 
 const lines = (s: string) =>
@@ -33,7 +34,7 @@ export function DNS() {
 }
 
 /** Escolha dos upstreams: predefinições (somam) e/ou endereços próprios. */
-export function UpstreamPicker({ initial, initialMode = 'fastest', onSave, saving, saveLabel = 'Salvar' }: {
+export function UpstreamPicker({ initial, initialMode = 'fastest', onSave, saving, saveLabel = t('Salvar') }: {
   initial: string[]
   initialMode?: string
   onSave: (servers: string[], mode: string) => void
@@ -74,19 +75,19 @@ export function UpstreamPicker({ initial, initialMode = 'fastest', onSave, savin
           )
         })}
       </div>
-      <Field label="Servidores (um por linha)" hint="Aceita https:// (DoH), tls:// (DoT), quic:// (DoQ) ou IP comum (ex.: 192.168.0.1:53).">
+      <Field label={t('Servidores (um por linha)')} hint={t('Aceita https:// (DoH), tls:// (DoT), quic:// (DoQ) ou IP comum (ex.: 192.168.0.1:53).')}>
         <Textarea rows={4} value={text} onChange={(e) => setText(e.target.value)} className="font-mono text-xs" />
       </Field>
       <div className="flex flex-wrap items-end gap-3">
-        <Field label="Como escolher">
+        <Field label={t('Como escolher')}>
           <Select
-            label="Como escolher"
+            label={t('Como escolher')}
             value={mode}
             onChange={setMode}
             options={[
-              { value: 'fastest', label: 'O mais rápido (recomendado)' },
-              { value: 'parallel', label: 'Todos ao mesmo tempo' },
-              { value: 'failover', label: 'Em ordem (o próximo só se o anterior falhar)' },
+              { value: 'fastest', label: t('O mais rápido (recomendado)') },
+              { value: 'parallel', label: t('Todos ao mesmo tempo') },
+              { value: 'failover', label: t('Em ordem (o próximo só se o anterior falhar)') },
             ]}
           />
         </Field>
@@ -112,12 +113,12 @@ function UpstreamCard() {
   const d = up.data
   return (
     <Card
-      title="Para onde as consultas vão"
-      subtitle={d?.custom ? 'Definido pelo painel (sobrepõe o arquivo de configuração)' : 'Vindo do arquivo de configuração'}
+      title={t('Para onde as consultas vão')}
+      subtitle={d?.custom ? t('Definido pelo painel (sobrepõe o arquivo de configuração)') : t('Vindo do arquivo de configuração')}
       actions={
         d?.custom && d.config_servers.length > 0 ? (
           <Button size="sm" variant="ghost" icon={<RotateCcw className="size-3.5" />} loading={reset.isPending} onClick={() => reset.mutate()}>
-            Voltar ao arquivo
+            {t('Voltar ao arquivo')}
           </Button>
         ) : undefined
       }
@@ -127,7 +128,7 @@ function UpstreamCard() {
         <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
           <UpstreamPicker initial={d.servers} initialMode={d.mode} saving={save.isPending} onSave={(servers, mode) => save.mutate({ servers, mode })} />
           <div>
-            <p className="mb-2 text-xs font-semibold text-ink">Em uso agora</p>
+            <p className="mb-2 text-xs font-semibold text-ink">{t('Em uso agora')}</p>
             <ul className="divide-y divide-line rounded-lg border border-line">
               {d.stats.map((s) => (
                 <li key={s.address} className="flex items-center gap-3 px-3 py-2 text-xs">
@@ -136,18 +137,17 @@ function UpstreamCard() {
                   </span>
                   <span className="tabular text-ink-2">{s.latency_ms ? `${s.latency_ms} ms` : '—'}</span>
                   {s.dnssec === 'yes' ? (
-                    <StatusBadge tone="good">DNSSEC</StatusBadge>
+                    <StatusBadge tone="good">{t('DNSSEC')}</StatusBadge>
                   ) : s.dnssec === 'no' ? (
-                    <StatusBadge tone="warning">sem DNSSEC</StatusBadge>
+                    <StatusBadge tone="warning">{t('sem DNSSEC')}</StatusBadge>
                   ) : null}
-                  {!s.in_use && <StatusBadge tone="neutral">fora de uso</StatusBadge>}
-                  {s.healthy ? <StatusBadge tone="good">ok</StatusBadge> : <StatusBadge tone="critical">sem resposta</StatusBadge>}
+                  {!s.in_use && <StatusBadge tone="neutral">{t('fora de uso')}</StatusBadge>}
+                  {s.healthy ? <StatusBadge tone="good">{t('ok')}</StatusBadge> : <StatusBadge tone="critical">{t('sem resposta')}</StatusBadge>}
                 </li>
               ))}
             </ul>
             <p className="mt-2 text-[11px] text-muted">
-              A troca vale na hora, sem reiniciar; o cache é limpo. DNSSEC: cada servidor é testado na partida e a cada 6 h (um domínio com
-              assinatura quebrada tem que falhar). Com <code className="font-mono">upstream.require_dnssec</code>, os que não validam ficam fora de uso.
+              {t('A troca vale na hora, sem reiniciar; o cache é limpo. DNSSEC: cada servidor é testado na partida e a cada 6 h (um domínio com assinatura quebrada tem que falhar). Com')}{' '}<code className="font-mono">upstream.require_dnssec</code>{t(', os que não validam ficam fora de uso.')}
             </p>
           </div>
         </div>
@@ -168,7 +168,7 @@ function LocalRecordsCard() {
   const add = () =>
     save.mutate([...recs, { ...f, name: f.name.trim(), value: f.value.trim() }], { onSuccess: () => setF({ ...f, name: '', value: '' }) })
   return (
-    <Card title="Registros locais" subtitle="Nomes da sua rede: impressora, NAS, câmeras, sistemas internos">
+    <Card title={t('Registros locais')} subtitle={t('Nomes da sua rede: impressora, NAS, câmeras, sistemas internos')}>
       <form
         className="mb-4 grid gap-2 sm:grid-cols-[1fr_110px_1fr_auto]"
         onSubmit={(e) => {
@@ -176,26 +176,26 @@ function LocalRecordsCard() {
           add()
         }}
       >
-        <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="nome (ex.: nas.casa)" aria-label="Nome" required />
+        <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder={t('nome (ex.: nas.casa)')} aria-label={t('Nome')} required />
         <Select
-          label="Tipo"
+          label={t('Tipo')}
           value={f.type}
           onChange={(type) => setF({ ...f, type: type as LocalRecord['type'] })}
           options={[
-            { value: 'A', label: 'A (IPv4)' },
-            { value: 'AAAA', label: 'AAAA (IPv6)' },
-            { value: 'CNAME', label: 'CNAME (apelido)' },
+            { value: 'A', label: t('A (IPv4)') },
+            { value: 'AAAA', label: t('AAAA (IPv6)') },
+            { value: 'CNAME', label: t('CNAME (apelido)') },
           ]}
         />
         <Input
           value={f.value}
           onChange={(e) => setF({ ...f, value: e.target.value })}
-          placeholder={f.type === 'CNAME' ? 'nome de destino' : 'IP'}
-          aria-label="Valor"
+          placeholder={f.type === 'CNAME' ? t('nome de destino') : t('IP')}
+          aria-label={t('Valor')}
           required
         />
         <Button type="submit" variant="primary" icon={<Plus className="size-4" />} loading={save.isPending}>
-          Adicionar
+          {t('Adicionar')}
         </Button>
       </form>
       <ErrorNote error={q.error || save.error} />
@@ -203,10 +203,10 @@ function LocalRecordsCard() {
         <table className="w-full min-w-[520px] text-sm">
           <thead className="text-left text-xs text-muted">
             <tr className="border-b border-line">
-              <th className="py-2 pr-3 font-medium">Nome</th>
-              <th className="px-3 py-2 font-medium">Tipo</th>
-              <th className="px-3 py-2 font-medium">Valor</th>
-              <th className="px-3 py-2 font-medium">Origem</th>
+              <th className="py-2 pr-3 font-medium">{t('Nome')}</th>
+              <th className="px-3 py-2 font-medium">{t('Tipo')}</th>
+              <th className="px-3 py-2 font-medium">{t('Valor')}</th>
+              <th className="px-3 py-2 font-medium">{t('Origem')}</th>
               <th className="w-12" />
             </tr>
           </thead>
@@ -216,12 +216,12 @@ function LocalRecordsCard() {
                 <td className="py-2 pr-3 font-mono text-xs text-ink">{r.name}</td>
                 <td className="px-3 py-2 font-mono text-xs text-ink-2">{r.type}</td>
                 <td className="px-3 py-2 font-mono text-xs text-ink-2">{r.value}</td>
-                <td className="px-3 py-2 text-xs text-ink-2">painel</td>
+                <td className="px-3 py-2 text-xs text-ink-2">{t('painel')}</td>
                 <td className="py-2 text-right">
                   <Button
                     size="sm"
                     variant="ghost"
-                    aria-label={`Apagar ${r.name}`}
+                    aria-label={t('Apagar {nome}', { nome: r.name })}
                     icon={<Trash className="size-3.5" />}
                     onClick={() => save.mutate(recs.filter((_, j) => j !== i))}
                   />
@@ -233,14 +233,14 @@ function LocalRecordsCard() {
                 <td className="py-2 pr-3 font-mono text-xs text-ink">{r.name}</td>
                 <td className="px-3 py-2 font-mono text-xs text-ink-2">{r.type}</td>
                 <td className="px-3 py-2 font-mono text-xs text-ink-2">{r.value}</td>
-                <td className="px-3 py-2 text-xs text-muted">arquivo</td>
+                <td className="px-3 py-2 text-xs text-muted">{t('arquivo')}</td>
                 <td />
               </tr>
             ))}
           </tbody>
         </table>
         {q.data && recs.length + q.data.config.length === 0 && (
-          <p className="py-6 text-center text-sm text-muted">Nenhum registro local.</p>
+          <p className="py-6 text-center text-sm text-muted">{t('Nenhum registro local.')}</p>
         )}
       </div>
     </Card>

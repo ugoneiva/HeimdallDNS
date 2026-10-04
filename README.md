@@ -518,6 +518,11 @@ make web-dev   # painel com recarga automática; a API vem de um heimdalldns em 
 
 O painel compilado vai no repositório, então `make build` (ou `go install`) funciona sem Node.
 
+
+**Idiomas:** o painel está em português e inglês.
+- **Escolha:** em Configurações → Aparência ou na tela de login. O padrão segue o idioma do navegador.
+- **Chaves:** os textos passam por `t('…')`, com o português como chave. A tradução fica em `web/src/i18n/en.ts`, e as datas e números seguem o idioma escolhido.
+- **Texto novo:** marque com `t('…')`. O `node scripts/i18n-wrap.mjs arquivo.tsx` marca automaticamente, e o `npm run i18n` lista o que falta traduzir (falha se faltar algo).
 ## Próximas etapas
 
 1. Publicar a versão 0.1 (tag `v0.1.0`; o workflow gera pacotes, imagem e assinaturas).

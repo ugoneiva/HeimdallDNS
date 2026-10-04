@@ -4,6 +4,7 @@ import { Check, Copy, Download, KeyRound, RefreshCw, Trash } from 'lucide-react'
 import { api } from '../api'
 import type { Device, DeviceAccess } from '../types'
 import { Button, ErrorNote } from '../components/ui'
+import { t } from '../lib/i18n'
 
 function CopyField({ label, value }: { label: string; value: string }) {
   const [done, setDone] = useState(false)
@@ -28,7 +29,7 @@ function CopyField({ label, value }: { label: string; value: string }) {
             }
           }}
         >
-          {done ? 'Copiado' : 'Copiar'}
+          {done ? t('Copiado') : t('Copiar')}
         </Button>
       </div>
     </div>
@@ -48,23 +49,22 @@ export function RoamingTab({ d }: { d: Device }) {
   })
   const [confirmRevoke, setConfirmRevoke] = useState(false)
   const a = access.data
-  if (!a) return <p className="text-xs text-muted">Carregando…</p>
+  if (!a) return <p className="text-xs text-muted">{t('Carregando…')}</p>
 
   if (!a.doh && !a.dot) {
     return (
       <div className="space-y-3 text-xs leading-relaxed text-ink-2">
         <p>
-          O DNS criptografado (DoH/DoT) ainda não está ligado neste servidor. Com ele, este aparelho continua com as regras dele mesmo
-          fora da rede (4G, hotel, casa).
+          {t('O DNS criptografado (DoH/DoT) ainda não está ligado neste servidor. Com ele, este aparelho continua com as regras dele mesmo fora da rede (4G, hotel, casa).')}
         </p>
-        <p>Para ligar, use um nome público apontando para o servidor e um certificado, no heimdalldns.yaml:</p>
+        <p>{t('Para ligar, use um nome público apontando para o servidor e um certificado, no heimdalldns.yaml:')}</p>
         <pre className="overflow-x-auto rounded-lg bg-surface-2 p-3 font-mono text-[11px] text-ink">{`dns:
   public_host: dns.suaempresa.com.br
   doh_listen: ":443"
   dot_listen: [":853"]
   acme: true            # certificado automático (Let's Encrypt)
   acme_email: ti@suaempresa.com.br`}</pre>
-        <p>Para o DoT por aparelho (Android), crie também o registro DNS curinga *.dns.suaempresa.com.br.</p>
+        <p>{t('Para o DoT por aparelho (Android), crie também o registro DNS curinga *.dns.suaempresa.com.br.')}</p>
       </div>
     )
   }
@@ -73,12 +73,11 @@ export function RoamingTab({ d }: { d: Device }) {
     return (
       <div className="space-y-4">
         <p className="text-xs leading-relaxed text-ink-2">
-          Gere um acesso exclusivo para este aparelho. Ele passa a usar o HeimdallDNS de qualquer lugar, com as regras, o isolamento e os
-          alertas dele. Quem tiver o endereço consegue usar o DNS como este aparelho: trate como uma senha.
+          {t('Gere um acesso exclusivo para este aparelho. Ele passa a usar o HeimdallDNS de qualquer lugar, com as regras, o isolamento e os alertas dele. Quem tiver o endereço consegue usar o DNS como este aparelho: trate como uma senha.')}
         </p>
         <ErrorNote error={mut.error} />
         <Button variant="primary" icon={<KeyRound className="size-4" />} loading={mut.isPending} onClick={() => mut.mutate('POST')}>
-          Gerar acesso para fora da rede
+          {t('Gerar acesso para fora da rede')}
         </Button>
       </div>
     )
@@ -87,31 +86,27 @@ export function RoamingTab({ d }: { d: Device }) {
   return (
     <div className="space-y-5">
       <div className="space-y-3">
-        {a.doh_url && <CopyField label="DNS por HTTPS (DoH)" value={a.doh_url} />}
-        {a.dot_host && <CopyField label="DNS por TLS (DoT) — nome do host" value={a.dot_host} />}
+        {a.doh_url && <CopyField label={t('DNS por HTTPS (DoH)')} value={a.doh_url} />}
+        {a.dot_host && <CopyField label={t('DNS por TLS (DoT) — nome do host')} value={a.dot_host} />}
       </div>
 
       <div className="space-y-2.5 rounded-lg border border-line p-4 text-xs leading-relaxed text-ink-2">
-        <p className="font-semibold text-ink">Como configurar</p>
+        <p className="font-semibold text-ink">{t('Como configurar')}</p>
         {a.dot_host && (
           <p>
-            <strong className="text-ink">Android 9 ou mais novo:</strong> Configurações → Rede e internet → DNS privado → Nome do host do
-            provedor de DNS particular → <code className="font-mono text-ink">{a.dot_host}</code>
+            <strong className="text-ink">{t('Android 9 ou mais novo:')}</strong>{' '}{t('Configurações → Rede e internet → DNS privado → Nome do host do provedor de DNS particular →')}{' '}<code className="font-mono text-ink">{a.dot_host}</code>
           </p>
         )}
         {a.doh_url && (
           <>
             <p>
-              <strong className="text-ink">iPhone, iPad e Mac:</strong> baixe o perfil abaixo no próprio aparelho e instale em Ajustes →
-              Perfil Baixado. O sistema avisa que o perfil não é verificado; é esperado.
+              <strong className="text-ink">{t('iPhone, iPad e Mac:')}</strong>{' '}{t('baixe o perfil abaixo no próprio aparelho e instale em Ajustes → Perfil Baixado. O sistema avisa que o perfil não é verificado; é esperado.')}
             </p>
             <p>
-              <strong className="text-ink">Windows 11:</strong> Configurações → Rede e Internet → (sua conexão) → Atribuição de servidor DNS
-              → Manual → Criptografia de DNS por HTTPS: <em>Ativado (modelo manual)</em> com o endereço DoH acima.
+              <strong className="text-ink">{t('Windows 11:')}</strong>{' '}{t('Configurações → Rede e Internet → (sua conexão) → Atribuição de servidor DNS → Manual → Criptografia de DNS por HTTPS:')}{' '}<em>{t('Ativado (modelo manual)')}</em>{' '}{t('com o endereço DoH acima.')}
             </p>
             <p>
-              <strong className="text-ink">Chrome, Edge e Firefox:</strong> Configurações → Privacidade → DNS seguro → Personalizado → o
-              endereço DoH acima (vale só para o navegador).
+              <strong className="text-ink">{t('Chrome, Edge e Firefox:')}</strong>{' '}{t('Configurações → Privacidade → DNS seguro → Personalizado → o endereço DoH acima (vale só para o navegador).')}
             </p>
           </>
         )}
@@ -126,11 +121,11 @@ export function RoamingTab({ d }: { d: Device }) {
             className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-accent px-3.5 text-sm font-medium text-accent-ink hover:brightness-110"
           >
             <Download className="size-4" aria-hidden />
-            Perfil para iPhone/Mac
+            {t('Perfil para iPhone/Mac')}
           </a>
         )}
         <Button icon={<RefreshCw className="size-4" />} loading={mut.isPending && mut.variables === 'POST'} onClick={() => mut.mutate('POST')}>
-          Trocar endereço
+          {t('Trocar endereço')}
         </Button>
         <Button
           variant={confirmRevoke ? 'danger' : 'ghost'}
@@ -139,11 +134,11 @@ export function RoamingTab({ d }: { d: Device }) {
           onBlur={() => setConfirmRevoke(false)}
           onClick={() => (confirmRevoke ? mut.mutate('DELETE') : setConfirmRevoke(true))}
         >
-          {confirmRevoke ? 'Confirmar: revogar' : 'Revogar acesso'}
+          {confirmRevoke ? t('Confirmar: revogar') : t('Revogar acesso')}
         </Button>
       </div>
       <p className="text-[11px] text-muted">
-        Trocar ou revogar invalida o endereço antigo na hora; o aparelho precisa ser configurado de novo.
+        {t('Trocar ou revogar invalida o endereço antigo na hora; o aparelho precisa ser configurado de novo.')}
       </p>
     </div>
   )

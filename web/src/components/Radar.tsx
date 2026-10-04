@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import type { Device } from '../types'
 import { ago } from '../lib/format'
+import { t } from '../lib/i18n'
 
 const SIZE = 240
 const C = SIZE / 2
@@ -46,7 +47,7 @@ export function Radar({ devices, now }: { devices: Device[]; now: number }) {
         viewBox={`0 0 ${SIZE} ${SIZE}`}
         className="w-full max-w-60"
         role="img"
-        aria-label={`Radar: ${blips.length} dispositivos ativos nos últimos 30 minutos${isolated ? `, ${isolated} isolados` : ''}`}
+        aria-label={t('Radar: {n} dispositivos ativos nos últimos 30 minutos', { n: blips.length }) + (isolated ? t(', {n} isolados', { n: isolated }) : '')}
       >
         <defs>
           <radialGradient id="radar-bg">
@@ -89,7 +90,7 @@ export function Radar({ devices, now }: { devices: Device[]; now: number }) {
         <circle cx={C} cy={C} r={3} fill="var(--accent)" />
       </svg>
       <figcaption className="mt-2 text-center text-[11px] text-muted">
-        Centro = consultou agora · borda = há 30 min
+        {t('Centro = consultou agora · borda = há 30 min')}
       </figcaption>
     </figure>
   )

@@ -6,6 +6,7 @@ import type { APIToken, Role, UserInfo } from '../types'
 import { ago, fmtDateTime } from '../lib/format'
 import { roleLabel, roleNote, useAuth } from '../lib/auth'
 import { Button, Card, ErrorNote, Field, Input, Modal, Select, StatusBadge } from '../components/ui'
+import { t } from '../lib/i18n'
 
 const roleOptions = (['admin', 'operator', 'viewer'] as Role[]).map((r) => ({ value: r, label: `${roleLabel[r]} — ${roleNote[r]}` }))
 
@@ -17,11 +18,11 @@ export function UsersCard() {
   const [editing, setEditing] = useState<UserInfo | null>(null)
   return (
     <Card
-      title="Usuários do painel"
-      subtitle="Cada pessoa com a própria conta, papel e verificação em duas etapas"
+      title={t('Usuários do painel')}
+      subtitle={t('Cada pessoa com a própria conta, papel e verificação em duas etapas')}
       actions={
         <Button size="sm" variant="primary" icon={<UserPlus className="size-3.5" />} onClick={() => setCreating(true)}>
-          Nova conta
+          {t('Nova conta')}
         </Button>
       }
     >
@@ -32,20 +33,20 @@ export function UsersCard() {
             <span className="min-w-0 flex-1">
               <span className="block font-medium text-ink">
                 {u.display || u.username}
-                {u.id === me?.id && <span className="ml-1.5 text-xs font-normal text-muted">(você)</span>}
+                {u.id === me?.id && <span className="ml-1.5 text-xs font-normal text-muted">{t('(você)')}</span>}
               </span>
               <span className="block text-xs text-muted">
-                {u.username} · {u.last_login && !u.last_login.startsWith('0001') ? `entrou ${ago(u.last_login)}` : 'nunca entrou'}
+                {u.username} · {u.last_login && !u.last_login.startsWith('0001') ? t('entrou {quando}', { quando: ago(u.last_login) }) : t('nunca entrou')}
               </span>
             </span>
             <span className="flex flex-wrap gap-1">
               <StatusBadge tone={u.role === 'admin' ? 'accent' : 'neutral'}>{roleLabel[u.role]}</StatusBadge>
-              {u.source === 'ad' && <StatusBadge tone="neutral">AD</StatusBadge>}
-              {u.mfa ? <StatusBadge tone="good">MFA</StatusBadge> : <StatusBadge tone="warning">sem MFA</StatusBadge>}
-              {u.disabled && <StatusBadge tone="critical">desativada</StatusBadge>}
+              {u.source === 'ad' && <StatusBadge tone="neutral">{t('AD')}</StatusBadge>}
+              {u.mfa ? <StatusBadge tone="good">{t('MFA')}</StatusBadge> : <StatusBadge tone="warning">{t('sem MFA')}</StatusBadge>}
+              {u.disabled && <StatusBadge tone="critical">{t('desativada')}</StatusBadge>}
             </span>
             <Button size="sm" variant="ghost" onClick={() => setEditing(u)}>
-              Gerenciar
+              {t('Gerenciar')}
             </Button>
           </li>
         ))}
@@ -68,7 +69,7 @@ function NewUserModal({ open, onClose, onDone }: { open: boolean; onClose: () =>
     },
   })
   return (
-    <Modal open={open} onClose={onClose} title="Nova conta no painel">
+    <Modal open={open} onClose={onClose} title={t('Nova conta no painel')}>
       <form
         className="space-y-3"
         onSubmit={(e) => {
@@ -77,23 +78,23 @@ function NewUserModal({ open, onClose, onDone }: { open: boolean; onClose: () =>
         }}
       >
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Usuário">
+          <Field label={t('Usuário')}>
             <Input value={f.username} onChange={(e) => setF({ ...f, username: e.target.value })} autoCapitalize="none" required />
           </Field>
-          <Field label="Nome">
+          <Field label={t('Nome')}>
             <Input value={f.display} onChange={(e) => setF({ ...f, display: e.target.value })} />
           </Field>
         </div>
-        <Field label="Papel">
-          <Select label="Papel" value={f.role} onChange={(role) => setF({ ...f, role: role as Role })} options={roleOptions} className="w-full" />
+        <Field label={t('Papel')}>
+          <Select label={t('Papel')} value={f.role} onChange={(role) => setF({ ...f, role: role as Role })} options={roleOptions} className="w-full" />
         </Field>
-        <Field label="Senha inicial" hint="Passe à pessoa por um canal seguro; ela troca em Configurações.">
+        <Field label={t('Senha inicial')} hint={t('Passe à pessoa por um canal seguro; ela troca em Configurações.')}>
           <Input type="password" autoComplete="new-password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} minLength={8} required />
         </Field>
         <ErrorNote error={create.error} />
         <div className="flex justify-end">
           <Button type="submit" variant="primary" loading={create.isPending}>
-            Criar conta
+            {t('Criar conta')}
           </Button>
         </div>
       </form>
@@ -123,12 +124,12 @@ function EditUserModal({ user, self, onClose }: { user: UserInfo | null; self: b
   })
   const u = (patch.data && patch.data.id === user?.id ? patch.data : user) ?? null
   return (
-    <Modal open={!!user} onClose={onClose} title={`Conta ${u?.username ?? ''}`}>
+    <Modal open={!!user} onClose={onClose} title={t('Conta {nome}', { nome: u?.username ?? '' })}>
       {u && (
         <div className="space-y-5 text-sm">
-          <Field label="Papel" hint={u.source === 'ad' ? 'Contas do AD recebem o papel pelos grupos (ad.login).' : 'Mudar o papel encerra as sessões da conta.'}>
+          <Field label={t('Papel')} hint={u.source === 'ad' ? t('Contas do AD recebem o papel pelos grupos (ad.login).') : t('Mudar o papel encerra as sessões da conta.')}>
             <Select
-              label="Papel"
+              label={t('Papel')}
               value={u.role}
               onChange={(role) => patch.mutate({ role })}
               options={roleOptions}
@@ -143,23 +144,23 @@ function EditUserModal({ user, self, onClose }: { user: UserInfo | null; self: b
                 patch.mutate({ password: pw })
               }}
             >
-              <Field label="Redefinir a senha">
+              <Field label={t('Redefinir a senha')}>
                 <Input type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} minLength={8} required />
               </Field>
               <Button type="submit" icon={<KeyRound className="size-4" />} loading={patch.isPending}>
-                Redefinir
+                {t('Redefinir')}
               </Button>
             </form>
           )}
           <div className="flex flex-wrap gap-2">
             {u.mfa && (
               <Button onClick={() => patch.mutate({ reset_mfa: true })} loading={patch.isPending}>
-                Zerar o MFA (perdeu o celular)
+                {t('Zerar o MFA (perdeu o celular)')}
               </Button>
             )}
             {!self && (
               <Button onClick={() => patch.mutate({ disabled: !u.disabled })} loading={patch.isPending}>
-                {u.disabled ? 'Reativar' : 'Desativar'}
+                {u.disabled ? t('Reativar') : t('Desativar')}
               </Button>
             )}
             {!self && (
@@ -169,11 +170,11 @@ function EditUserModal({ user, self, onClose }: { user: UserInfo | null; self: b
                 loading={del.isPending}
                 onClick={() => (confirmDel ? del.mutate() : setConfirmDel(true))}
               >
-                {confirmDel ? 'Confirmar exclusão' : 'Excluir'}
+                {confirmDel ? t('Confirmar exclusão') : t('Excluir')}
               </Button>
             )}
           </div>
-          {patch.isSuccess && <p className="text-xs text-good-ink">Alterado. As sessões abertas da conta foram encerradas quando preciso.</p>}
+          {patch.isSuccess && <p className="text-xs text-good-ink">{t('Alterado. As sessões abertas da conta foram encerradas quando preciso.')}</p>}
           <ErrorNote error={patch.error || del.error} />
         </div>
       )}
@@ -201,7 +202,7 @@ export function TokensCard() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tokens'] }),
   })
   return (
-    <Card title="Tokens de API" subtitle="Para integrações (Grafana, scripts, automação), cada um com papel e validade">
+    <Card title={t('Tokens de API')} subtitle={t('Para integrações (Grafana, scripts, automação), cada um com papel e validade')}>
       <form
         className="mb-4 grid gap-2 sm:grid-cols-[1fr_150px_110px_auto]"
         onSubmit={(e) => {
@@ -209,33 +210,33 @@ export function TokensCard() {
           create.mutate()
         }}
       >
-        <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="nome (ex.: Grafana)" aria-label="Nome do token" required />
+        <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder={t('nome (ex.: Grafana)')} aria-label={t('Nome do token')} required />
         <Select
-          label="Papel do token"
+          label={t('Papel do token')}
           value={f.role}
           onChange={(role) => setF({ ...f, role: role as Role })}
           options={(['viewer', 'operator', 'admin'] as Role[]).map((r) => ({ value: r, label: roleLabel[r] }))}
         />
         <Select
-          label="Validade"
+          label={t('Validade')}
           value={String(f.expires_days)}
           onChange={(v) => setF({ ...f, expires_days: Number(v) })}
           options={[
-            { value: '30', label: '30 dias' },
-            { value: '90', label: '90 dias' },
-            { value: '365', label: '1 ano' },
-            { value: '0', label: 'não vence' },
+            { value: '30', label: t('30 dias') },
+            { value: '90', label: t('90 dias') },
+            { value: '365', label: t('1 ano') },
+            { value: '0', label: t('não vence') },
           ]}
         />
         <Button type="submit" variant="primary" icon={<Plus className="size-4" />} loading={create.isPending}>
-          Criar
+          {t('Criar')}
         </Button>
       </form>
       <ErrorNote error={create.error || tokens.error || revoke.error} />
       {created && (
         <div className="mb-4 rounded-lg border border-accent bg-accent-soft p-3 text-xs">
           <p className="mb-2 flex items-center gap-1.5 font-semibold text-ink">
-            <ShieldCheck className="size-4" aria-hidden /> Copie agora: o token não aparece de novo.
+            <ShieldCheck className="size-4" aria-hidden />{' '}{t('Copie agora: o token não aparece de novo.')}
           </p>
           <div className="flex items-center gap-2">
             <code className="min-w-0 flex-1 font-mono break-all text-ink">{created}</code>
@@ -244,38 +245,38 @@ export function TokensCard() {
               icon={<Copy className="size-3.5" />}
               onClick={() => navigator.clipboard.writeText(created).then(() => setCopied(true))}
             >
-              {copied ? 'Copiado' : 'Copiar'}
+              {copied ? t('Copiado') : t('Copiar')}
             </Button>
           </div>
           <p className="mt-2 text-ink-2">
-            Use no cabeçalho <code className="font-mono">Authorization: Bearer &lt;token&gt;</code>.
+            {t('Use no cabeçalho')}{' '}<code className="font-mono">Authorization: Bearer &lt;token&gt;</code>.
           </p>
         </div>
       )}
       <ul className="divide-y divide-line text-xs">
-        {tokens.data?.map((t) => {
-          const expired = !t.expires.startsWith('0001') && new Date(t.expires) < new Date()
+        {tokens.data?.map((tk) => {
+          const expired = !tk.expires.startsWith('0001') && new Date(tk.expires) < new Date()
           return (
-            <li key={t.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
+            <li key={tk.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
               <span className="min-w-0 flex-1">
-                <span className="block font-medium text-ink">{t.name}</span>
+                <span className="block font-medium text-ink">{tk.name}</span>
                 <span className="block text-muted">
-                  <code className="font-mono">{t.prefix}…</code> · criado por {t.created_by} em {fmtDateTime(t.created)} ·{' '}
-                  {t.last_used.startsWith('0001') ? 'nunca usado' : `usado ${ago(t.last_used)}`}
+                  <code className="font-mono">{tk.prefix}…</code>{' '}{t('· criado por')}{' '}{tk.created_by}{' '}{t('em')}{' '}{fmtDateTime(tk.created)} ·{' '}
+                  {tk.last_used.startsWith('0001') ? t('nunca usado') : t('usado {quando}', { quando: ago(tk.last_used) })}
                 </span>
               </span>
-              <StatusBadge tone="neutral">{roleLabel[t.role]}</StatusBadge>
+              <StatusBadge tone="neutral">{roleLabel[tk.role]}</StatusBadge>
               {expired ? (
-                <StatusBadge tone="critical">vencido</StatusBadge>
+                <StatusBadge tone="critical">{t('vencido')}</StatusBadge>
               ) : (
-                <span className="text-muted">{t.expires.startsWith('0001') ? 'não vence' : `vence ${fmtDateTime(t.expires)}`}</span>
+                <span className="text-muted">{tk.expires.startsWith('0001') ? t('não vence') : t('vence {quando}', { quando: fmtDateTime(tk.expires) })}</span>
               )}
-              <Button size="sm" variant="ghost" aria-label={`Revogar ${t.name}`} icon={<Trash className="size-3.5" />} onClick={() => revoke.mutate(t.id)} />
+              <Button size="sm" variant="ghost" aria-label={t('Revogar {nome}', { nome: tk.name })} icon={<Trash className="size-3.5" />} onClick={() => revoke.mutate(tk.id)} />
             </li>
           )
         })}
       </ul>
-      {tokens.data?.length === 0 && <p className="text-xs text-muted">Nenhum token. A CLI do servidor usa o token próprio do serviço (api.token).</p>}
+      {tokens.data?.length === 0 && <p className="text-xs text-muted">{t('Nenhum token. A CLI do servidor usa o token próprio do serviço (api.token).')}</p>}
     </Card>
   )
 }

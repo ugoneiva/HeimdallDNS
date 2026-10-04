@@ -6,15 +6,16 @@ import type { DomainTest, ListStatus, Rules } from '../types'
 import { ago, fmtInt } from '../lib/format'
 import { Button, Card, ErrorNote, Field, Input, Select, StatusBadge, Switch, Textarea } from '../components/ui'
 import { useDevices } from './Devices'
+import { t } from '../lib/i18n'
 
 // Listas conhecidas, para adicionar com um clique.
 export const listSuggestions = [
-  { name: 'StevenBlack Unified', url: 'https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts', note: 'Anúncios e malware (formato hosts)' },
-  { name: 'HaGeZi Pro', url: 'https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.txt', note: 'Anúncios, rastreadores e telemetria' },
+  { name: 'StevenBlack Unified', url: 'https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts', note: t('Anúncios e malware (formato hosts)') },
+  { name: 'HaGeZi Pro', url: 'https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.txt', note: t('Anúncios, rastreadores e telemetria') },
   {
     name: 'HaGeZi Threat Intelligence',
     url: 'https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/tif.txt',
-    note: 'Malware, phishing, C2 e golpes (gera alertas)',
+    note: t('Malware, phishing, C2 e golpes (gera alertas)'),
     category: 'threat' as const,
   },
 ]
@@ -71,11 +72,11 @@ function ListsCard() {
 
   return (
     <Card
-      title="Listas de bloqueio"
-      subtitle={`${fmtInt(total)} regras ativas · baixadas de novo automaticamente`}
+      title={t('Listas de bloqueio')}
+      subtitle={t('{n} regras ativas · baixadas de novo automaticamente', { n: fmtInt(total) })}
       actions={
         <Button size="sm" icon={<RefreshCw className="size-3.5" />} loading={refresh.isPending} onClick={() => refresh.mutate()}>
-          Atualizar agora
+          {t('Atualizar agora')}
         </Button>
       }
       pad={false}
@@ -84,12 +85,12 @@ function ListsCard() {
         <table className="w-full min-w-[720px] text-sm">
           <thead className="text-left text-xs text-muted">
             <tr className="border-y border-line">
-              <th className="px-4 py-2.5 font-medium">Lista</th>
-              <th className="px-3 py-2.5 font-medium">Tipo</th>
-              <th className="px-3 py-2.5 text-right font-medium">Regras</th>
-              <th className="px-3 py-2.5 font-medium">Atualizada</th>
-              <th className="px-3 py-2.5 font-medium">Situação</th>
-              <th className="px-3 py-2.5 font-medium">Ativa</th>
+              <th className="px-4 py-2.5 font-medium">{t('Lista')}</th>
+              <th className="px-3 py-2.5 font-medium">{t('Tipo')}</th>
+              <th className="px-3 py-2.5 text-right font-medium">{t('Regras')}</th>
+              <th className="px-3 py-2.5 font-medium">{t('Atualizada')}</th>
+              <th className="px-3 py-2.5 font-medium">{t('Situação')}</th>
+              <th className="px-3 py-2.5 font-medium">{t('Ativa')}</th>
               <th className="w-24 px-3 py-2.5" />
             </tr>
           </thead>
@@ -104,16 +105,16 @@ function ListsCard() {
                 </td>
                 <td className="px-3 py-2.5">
                   {l.fixed ? (
-                    <StatusBadge tone={l.category === 'threat' ? 'critical' : 'neutral'}>{l.category === 'threat' ? 'Ameaças' : 'Anúncios'}</StatusBadge>
+                    <StatusBadge tone={l.category === 'threat' ? 'critical' : 'neutral'}>{l.category === 'threat' ? t('Ameaças') : t('Anúncios')}</StatusBadge>
                   ) : (
                     <Select
-                      label={`Tipo de ${l.name}`}
+                      label={t('Tipo de {nome}', { nome: l.name })}
                       value={l.category}
                       onChange={(category) => l.id && patch.mutate({ id: l.id, category })}
                       className="h-8 text-xs"
                       options={[
-                        { value: '', label: 'Anúncios e rastreio' },
-                        { value: 'threat', label: 'Ameaças (alerta)' },
+                        { value: '', label: t('Anúncios e rastreio') },
+                        { value: 'threat', label: t('Ameaças (alerta)') },
                       ]}
                     />
                   )}
@@ -123,18 +124,18 @@ function ListsCard() {
                 <td className="px-3 py-2.5">
                   {l.error ? (
                     <span title={l.error}>
-                      <StatusBadge tone="critical">Falha ao baixar</StatusBadge>
+                      <StatusBadge tone="critical">{t('Falha ao baixar')}</StatusBadge>
                     </span>
                   ) : !l.enabled ? (
-                    <StatusBadge tone="neutral">Desativada</StatusBadge>
+                    <StatusBadge tone="neutral">{t('Desativada')}</StatusBadge>
                   ) : l.updated_at ? (
-                    <StatusBadge tone="good">Em uso</StatusBadge>
+                    <StatusBadge tone="good">{t('Em uso')}</StatusBadge>
                   ) : (
-                    <StatusBadge tone="warning">Baixando…</StatusBadge>
+                    <StatusBadge tone="warning">{t('Baixando…')}</StatusBadge>
                   )}
                   {l.fixed && (
-                    <span className="mt-1 block text-[11px] text-muted" title="Definida no heimdalldns.yaml; altere por lá.">
-                      arquivo de configuração
+                    <span className="mt-1 block text-[11px] text-muted" title={t('Definida no heimdalldns.yaml; altere por lá.')}>
+                      {t('arquivo de configuração')}
                     </span>
                   )}
                 </td>
@@ -142,7 +143,7 @@ function ListsCard() {
                   <Switch
                     checked={l.enabled}
                     disabled={l.fixed || patch.isPending}
-                    label={l.fixed ? 'Definida no arquivo de configuração' : l.enabled ? `Desativar ${l.name}` : `Ativar ${l.name}`}
+                    label={l.fixed ? t('Definida no arquivo de configuração') : l.enabled ? t('Desativar {nome}', { nome: l.name }) : t('Ativar {nome}', { nome: l.name })}
                     onChange={(enabled) => l.id && patch.mutate({ id: l.id, enabled })}
                   />
                 </td>
@@ -154,9 +155,9 @@ function ListsCard() {
                       icon={<Trash className="size-3.5" />}
                       onBlur={() => setConfirmDel(null)}
                       onClick={() => (confirmDel === l.id ? del.mutate(l.id) : setConfirmDel(l.id!))}
-                      aria-label={`Remover ${l.name}`}
+                      aria-label={t('Remover {nome}', { nome: l.name })}
                     >
-                      {confirmDel === l.id ? 'Remover' : ''}
+                      {confirmDel === l.id ? t('Remover') : ''}
                     </Button>
                   )}
                 </td>
@@ -173,10 +174,10 @@ function ListsCard() {
             add.mutate({ name, url }, { onSuccess: () => (setName(''), setUrl('')) })
           }}
         >
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nome (opcional)" aria-label="Nome da lista" />
-          <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://… (hosts, domínios ou Adblock)" aria-label="URL da lista" required />
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('Nome (opcional)')} aria-label={t('Nome da lista')} />
+          <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={t('https://… (hosts, domínios ou Adblock)')} aria-label={t('URL da lista')} required />
           <Button type="submit" variant="primary" icon={<Plus className="size-4" />} loading={add.isPending}>
-            Adicionar
+            {t('Adicionar')}
           </Button>
         </form>
         <ErrorNote error={add.error || patch.error || del.error} />
@@ -220,7 +221,7 @@ function RulesCard() {
   })
   const cfg = rules.data
   return (
-    <Card title="Regras próprias" subtitle="Valem para todos os dispositivos, por cima das listas">
+    <Card title={t('Regras próprias')} subtitle={t('Valem para todos os dispositivos, por cima das listas')}>
       <form
         className="space-y-4"
         onSubmit={(e) => {
@@ -229,23 +230,23 @@ function RulesCard() {
         }}
       >
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Bloquear (um por linha)" hint="Domínio vale com os subdomínios. Aceita ||dominio^, /regex/ e service:nome.">
-            <Textarea rows={8} value={deny} onChange={(e) => (setDeny(e.target.value), setDirty(true))} placeholder={'exemplo.com\nservice:tiktok'} />
+          <Field label={t('Bloquear (um por linha)')} hint={t('Domínio vale com os subdomínios. Aceita ||dominio^, /regex/ e service:nome.')}>
+            <Textarea rows={8} value={deny} onChange={(e) => (setDeny(e.target.value), setDirty(true))} placeholder={t('exemplo.com\nservice:tiktok')} />
           </Field>
-          <Field label="Liberar (um por linha)" hint="Exceções: vencem as listas de bloqueio.">
-            <Textarea rows={8} value={allow} onChange={(e) => (setAllow(e.target.value), setDirty(true))} placeholder="s.youtube.com" />
+          <Field label={t('Liberar (um por linha)')} hint={t('Exceções: vencem as listas de bloqueio.')}>
+            <Textarea rows={8} value={allow} onChange={(e) => (setAllow(e.target.value), setDirty(true))} placeholder={t('s.youtube.com')} />
           </Field>
         </div>
         {cfg && cfg.config_deny.length + cfg.config_allow.length > 0 && (
           <p className="text-[11px] text-muted">
-            Também valem {cfg.config_deny.length} bloqueios e {cfg.config_allow.length} exceções do arquivo de configuração.
+            {t('Também valem')}{' '}{cfg.config_deny.length}{' '}{t('bloqueios e')}{' '}{cfg.config_allow.length}{' '}{t('exceções do arquivo de configuração.')}
           </p>
         )}
         <ErrorNote error={save.error} />
         <div className="flex justify-end">
-          {save.isSuccess && !dirty && <span className="mr-3 self-center text-xs text-good-ink">Regras salvas e em vigor.</span>}
+          {save.isSuccess && !dirty && <span className="mr-3 self-center text-xs text-good-ink">{t('Regras salvas e em vigor.')}</span>}
           <Button type="submit" variant="primary" loading={save.isPending} disabled={!dirty}>
-            Salvar regras
+            {t('Salvar regras')}
           </Button>
         </div>
       </form>
@@ -253,7 +254,7 @@ function RulesCard() {
   )
 }
 
-const verdictText = { allowed: 'Liberado', blocked: 'Bloqueado', isolated: 'Barrado (dispositivo isolado)' }
+const verdictText = { allowed: t('Liberado'), blocked: t('Bloqueado'), isolated: t('Barrado (dispositivo isolado)') }
 
 function TestCard() {
   const devices = useDevices().data ?? []
@@ -265,10 +266,10 @@ function TestCard() {
     <Card
       title={
         <span className="flex items-center gap-2">
-          <FlaskConical className="size-4 text-accent" aria-hidden />O que acontece com este domínio?
+          <FlaskConical className="size-4 text-accent" aria-hidden />{t('O que acontece com este domínio?')}
         </span>
       }
-      subtitle="Mostra a regra que decide, sem fazer consulta nenhuma"
+      subtitle={t('Mostra a regra que decide, sem fazer consulta nenhuma')}
     >
       <form
         className="space-y-3"
@@ -277,17 +278,17 @@ function TestCard() {
           if (name.trim()) test.mutate()
         }}
       >
-        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="ads.exemplo.com" aria-label="Domínio" />
+        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('ads.exemplo.com')} aria-label={t('Domínio')} />
         <div className="flex gap-2">
           <Select
-            label="Dispositivo"
+            label={t('Dispositivo')}
             value={client}
             onChange={setClient}
             className="min-w-0 flex-1"
-            options={[{ value: '', label: 'Regras globais' }, ...devices.map((d) => ({ value: d.id, label: d.display }))]}
+            options={[{ value: '', label: t('Regras globais') }, ...devices.map((d) => ({ value: d.id, label: d.display }))]}
           />
           <Button type="submit" variant="primary" loading={test.isPending}>
-            Testar
+            {t('Testar')}
           </Button>
         </div>
       </form>
@@ -302,20 +303,20 @@ function TestCard() {
             <p className="text-ink-2">
               {r.rule ? (
                 <>
-                  Regra: <code className="font-mono text-ink">{r.rule}</code>{' '}
+                  {t('Regra:')}{' '}<code className="font-mono text-ink">{r.rule}</code>{' '}
                   <span className="text-muted">
-                    ({r.source === 'client' ? 'do dispositivo' : r.source === 'nrd' ? 'recém-registrado' : 'global'})
+                    ({r.source === 'client' ? t('do dispositivo') : r.source === 'nrd' ? t('recém-registrado') : 'global'})
                   </span>
                 </>
               ) : (
-                'Nenhuma regra casou: a consulta segue para o upstream.'
+                t('Nenhuma regra casou: a consulta segue para o upstream.')
               )}
             </p>
-            {r.category === 'threat' && <p className="text-critical-ink">Está numa lista de ameaças: acessos geram alerta de segurança.</p>}
+            {r.category === 'threat' && <p className="text-critical-ink">{t('Está numa lista de ameaças: acessos geram alerta de segurança.')}</p>}
             {r.registered_days_ago !== undefined && (
-              <p className="text-muted">Domínio registrado há {fmtInt(r.registered_days_ago)} dias (RDAP).</p>
+              <p className="text-muted">{t('Domínio registrado há')}{' '}{fmtInt(r.registered_days_ago)}{' '}{t('dias (RDAP).')}</p>
             )}
-            {r.client?.skip_global_lists && <p className="text-muted">Este dispositivo não usa as listas globais.</p>}
+            {r.client?.skip_global_lists && <p className="text-muted">{t('Este dispositivo não usa as listas globais.')}</p>}
           </div>
         )}
       </div>

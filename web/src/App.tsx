@@ -5,6 +5,7 @@ import { api, authEvents } from './api'
 import type { AuthState } from './types'
 import { cx } from './components/ui'
 import { Logo } from './components/Logo'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { HABanner } from './components/HABanner'
 import { Login } from './pages/Login'
 import { Overview } from './pages/Overview'
@@ -20,19 +21,20 @@ import { DNS } from './pages/DNS'
 import { Wizard } from './pages/Wizard'
 import { MFACard } from './pages/Settings'
 import { roleLabel, useAuth } from './lib/auth'
+import { t } from './lib/i18n'
 
 type Page = 'overview' | 'devices' | 'security' | 'queries' | 'lists' | 'dns' | 'dhcp' | 'ad' | 'settings'
 
 const nav: { page: Page; path: string; label: string; icon: ComponentType<{ className?: string }> }[] = [
-  { page: 'overview', path: '', label: 'Visão geral', icon: Gauge },
-  { page: 'devices', path: 'dispositivos', label: 'Dispositivos', icon: RadarIcon },
-  { page: 'security', path: 'seguranca', label: 'Segurança', icon: ShieldAlert },
-  { page: 'queries', path: 'consultas', label: 'Consultas', icon: ScrollText },
-  { page: 'lists', path: 'listas', label: 'Listas e regras', icon: ListFilter },
-  { page: 'dns', path: 'dns', label: 'DNS', icon: Globe },
-  { page: 'dhcp', path: 'dhcp', label: 'DHCP', icon: Network },
-  { page: 'ad', path: 'ad', label: 'Active Directory', icon: BookUser },
-  { page: 'settings', path: 'configuracoes', label: 'Configurações', icon: SettingsIcon },
+  { page: 'overview', path: '', label: t('Visão geral'), icon: Gauge },
+  { page: 'devices', path: 'dispositivos', label: t('Dispositivos'), icon: RadarIcon },
+  { page: 'security', path: 'seguranca', label: t('Segurança'), icon: ShieldAlert },
+  { page: 'queries', path: 'consultas', label: t('Consultas'), icon: ScrollText },
+  { page: 'lists', path: 'listas', label: t('Listas e regras'), icon: ListFilter },
+  { page: 'dns', path: 'dns', label: t('DNS'), icon: Globe },
+  { page: 'dhcp', path: 'dhcp', label: t('DHCP'), icon: Network },
+  { page: 'ad', path: 'ad', label: t('Active Directory'), icon: BookUser },
+  { page: 'settings', path: 'configuracoes', label: t('Configurações'), icon: SettingsIcon },
 ]
 
 function parseHash(): { page: Page; arg: string | null } {
@@ -69,7 +71,7 @@ export default function App() {
   if (auth.error || !auth.data) {
     return (
       <div className="grid min-h-full place-items-center p-6 text-center text-sm text-ink-2">
-        Não foi possível falar com o servidor HeimdallDNS. Ele está rodando?
+        {t('Não foi possível falar com o servidor HeimdallDNS. Ele está rodando?')}
       </div>
     )
   }
@@ -121,11 +123,11 @@ function Shell({ version, onLogout }: { version: string; onLogout: () => void })
         <div className="flex items-center gap-2.5 px-4 py-3 lg:px-5 lg:py-5">
           <Logo className="size-7" />
           <div className="leading-tight">
-            <p className="text-sm font-semibold text-ink">HeimdallDNS</p>
-            <p className="text-[11px] text-muted">guardião da sua rede</p>
+            <p className="text-sm font-semibold text-ink">{t('HeimdallDNS')}</p>
+            <p className="text-[11px] text-muted">{t('guardião da sua rede')}</p>
           </div>
         </div>
-        <nav aria-label="Seções" className="flex gap-1 overflow-x-auto px-2 pb-2 lg:flex-col lg:px-3 lg:pb-0">
+        <nav aria-label={t('Seções')} className="flex gap-1 overflow-x-auto px-2 pb-2 lg:flex-col lg:px-3 lg:pb-0">
           {items.map((n) => {
             const Icon = n.icon
             const active = n.page === page
@@ -147,7 +149,7 @@ function Shell({ version, onLogout }: { version: string; onLogout: () => void })
                       'ml-auto rounded-full px-1.5 text-[10px] leading-4 font-semibold',
                       urgent ? 'bg-critical text-white' : 'bg-surface-3 text-ink-2',
                     )}
-                    aria-label={`${openAlerts} alertas abertos`}
+                    aria-label={t('{n} alertas abertos', { n: openAlerts })}
                   >
                     {openAlerts > 99 ? '99+' : openAlerts}
                   </span>
@@ -156,7 +158,7 @@ function Shell({ version, onLogout }: { version: string; onLogout: () => void })
             )
           })}
         </nav>
-        <p className="absolute bottom-4 left-5 hidden text-[11px] text-muted lg:block">versão {version}</p>
+        <p className="absolute bottom-4 left-5 hidden text-[11px] text-muted lg:block">{t('versão')}{' '}{version}</p>
       </aside>
 
       <main className="relative min-w-0">
@@ -165,6 +167,7 @@ function Shell({ version, onLogout }: { version: string; onLogout: () => void })
           <HABanner />
           <h1 className="mb-5 text-xl font-semibold tracking-tight text-ink">{current.label}</h1>
           <ReadOnlyNote page={page} />
+          <ErrorBoundary resetKey={page}>
           {page === 'overview' && <Overview onOpenDevice={(id) => go('devices', id)} onOpenSecurity={() => go('security')} />}
           {page === 'devices' && <Devices openId={arg} onOpen={(id) => go('devices', id)} />}
           {page === 'security' && <Security onOpenDevice={(id) => go('devices', id)} />}
@@ -174,6 +177,7 @@ function Shell({ version, onLogout }: { version: string; onLogout: () => void })
           {page === 'dhcp' && <DHCP onOpenDevice={(id) => go('devices', id)} />}
           {page === 'ad' && <ActiveDirectory />}
           {page === 'settings' && <Settings onLogout={onLogout} />}
+          </ErrorBoundary>
         </div>
       </main>
     </div>
@@ -191,8 +195,8 @@ function ReadOnlyNote({ page }: { page: Page }) {
   if (!role || !need || role === 'admin' || (need === 'operator' && role === 'operator')) return null
   return (
     <p className="mb-4 rounded-lg border border-line bg-surface px-3 py-2 text-xs text-ink-2">
-      Seu papel é <strong className="text-ink">{roleLabel[role]}</strong>: aqui você vê tudo, mas as alterações são de quem é{' '}
-      {need === 'admin' ? 'administrador' : 'operador ou administrador'}.
+      {t('Seu papel é')}{' '}<strong className="text-ink">{roleLabel[role]}</strong>{t(': aqui você vê tudo, mas as alterações são de quem é')}{' '}
+      {need === 'admin' ? 'administrador' : t('operador ou administrador')}.
     </p>
   )
 }
@@ -206,13 +210,13 @@ function EnrollMFA({ onLogout }: { onLogout: () => void }) {
         <div className="flex items-center gap-3">
           <Logo className="size-9" />
           <div>
-            <h1 className="text-lg font-semibold text-ink">Proteja sua conta</h1>
-            <p className="text-xs text-ink-2">Contas do Active Directory usam a verificação em duas etapas. Leva um minuto.</p>
+            <h1 className="text-lg font-semibold text-ink">{t('Proteja sua conta')}</h1>
+            <p className="text-xs text-ink-2">{t('Contas do Active Directory usam a verificação em duas etapas. Leva um minuto.')}</p>
           </div>
         </div>
         <MFACard />
         <button className="text-xs text-muted hover:text-ink" onClick={onLogout}>
-          Sair
+          {t('Sair')}
         </button>
       </div>
     </div>

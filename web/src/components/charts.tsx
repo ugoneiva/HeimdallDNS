@@ -15,6 +15,7 @@ import type { Bucket, Second } from '../types'
 import { useChartColors } from '../lib/theme'
 import { fmtCompact, fmtDateTime, fmtInt, fmtTime } from '../lib/format'
 import { cx } from './ui'
+import { t } from '../lib/i18n'
 
 type Series = { key: string; label: string; color: string }
 
@@ -69,8 +70,8 @@ function ChartTip({ active, payload, label, series, title }: TipProps) {
 export function LiveTrafficChart({ data }: { data: Second[] }) {
   const c = useChartColors()
   const series: Series[] = [
-    { key: 'total', label: 'Consultas/s', color: c.s1 },
-    { key: 'blocked', label: 'Bloqueadas/s', color: c.s2 },
+    { key: 'total', label: t('Consultas/s'), color: c.s1 },
+    { key: 'blocked', label: t('Bloqueadas/s'), color: c.s2 },
   ]
   return (
     <div>
@@ -136,8 +137,8 @@ export function TrafficHistoryChart({ points, stepS }: { points: Bucket[]; stepS
     [points],
   )
   const series: Series[] = [
-    { key: 'allowed', label: 'Permitidas', color: c.s1 },
-    { key: 'blocked', label: 'Bloqueadas', color: c.s2 },
+    { key: 'allowed', label: t('Permitidas'), color: c.s1 },
+    { key: 'blocked', label: t('Bloqueadas'), color: c.s2 },
   ]
   const tickFmt = (t: number) => (stepS >= 3600 ? fmtDateTime(t).replace(',', '') : fmtTime(t).slice(0, 5))
 
@@ -150,7 +151,7 @@ export function TrafficHistoryChart({ points, stepS }: { points: Bucket[]; stepS
           className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-2 hover:bg-surface-2 hover:text-ink"
         >
           {table ? <ChartColumn className="size-3.5" aria-hidden /> : <Table2 className="size-3.5" aria-hidden />}
-          {table ? 'Ver gráfico' : 'Ver tabela'}
+          {table ? t('Ver gráfico') : t('Ver tabela')}
         </button>
       </div>
       {table ? (
@@ -158,9 +159,9 @@ export function TrafficHistoryChart({ points, stepS }: { points: Bucket[]; stepS
           <table className="w-full text-xs">
             <thead className="sticky top-0 bg-surface-2 text-left text-muted">
               <tr>
-                <th className="px-3 py-2 font-medium">Início</th>
-                <th className="px-3 py-2 text-right font-medium">Permitidas</th>
-                <th className="px-3 py-2 text-right font-medium">Bloqueadas</th>
+                <th className="px-3 py-2 font-medium">{t('Início')}</th>
+                <th className="px-3 py-2 text-right font-medium">{t('Permitidas')}</th>
+                <th className="px-3 py-2 text-right font-medium">{t('Bloqueadas')}</th>
               </tr>
             </thead>
             <tbody className="tabular">

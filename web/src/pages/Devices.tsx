@@ -8,6 +8,7 @@ import { Card, Input, Segmented, StatusBadge, Switch, cx } from '../components/u
 import { Radar } from '../components/Radar'
 import { DeviceModal } from './DeviceModal'
 import { GroupsCard } from './Groups'
+import { locale, t } from '../lib/i18n'
 
 type Filter = 'all' | 'active' | 'isolated' | 'rules'
 
@@ -50,7 +51,7 @@ export function Devices({ openId, onOpen }: { openId: string | null; onOpen: (id
     })
     // Ordem estável (por nome): as linhas não trocam de lugar a cada atualização,
     // o que evitaria clicar no interruptor do aparelho errado.
-    .sort((a, b) => a.display.localeCompare(b.display, 'pt-BR', { numeric: true }) || a.id.localeCompare(b.id))
+    .sort((a, b) => a.display.localeCompare(b.display, locale, { numeric: true }) || a.id.localeCompare(b.id))
   }, [data, q, filter, now])
 
   const open = data.find((d) => d.id === openId) ?? null
@@ -58,15 +59,15 @@ export function Devices({ openId, onOpen }: { openId: string | null; onOpen: (id
   return (
     <div className="space-y-5">
       <div className="grid gap-5 lg:grid-cols-[280px_1fr]">
-        <Card title="Radar" subtitle="Dispositivos ativos nos últimos 30 minutos">
+        <Card title={t('Radar')} subtitle={t('Dispositivos ativos nos últimos 30 minutos')}>
           <Radar devices={data} now={now} />
         </Card>
         <div className="grid grid-cols-2 gap-3 self-start sm:grid-cols-4">
           {[
-            ['Dispositivos conhecidos', data.length],
-            ['Ativos (5 min)', active],
-            ['Isolados', isolated],
-            ['Com regras próprias', withRules],
+            [t('Dispositivos conhecidos'), data.length],
+            [t('Ativos (5 min)'), active],
+            [t('Isolados'), isolated],
+            [t('Com regras próprias'), withRules],
           ].map(([l, v]) => (
             <div key={l} className="rounded-xl border border-line bg-surface px-4 py-3.5">
               <p className="text-xs text-muted">{l}</p>
@@ -74,9 +75,7 @@ export function Devices({ openId, onOpen }: { openId: string | null; onOpen: (id
             </div>
           ))}
           <p className="col-span-full text-xs leading-relaxed text-muted">
-            O interruptor <strong className="text-ink-2">Acesso</strong> isola o dispositivo na hora: o DNS passa a recusar
-            todas as consultas dele. Use <Ellipsis className="inline size-3.5" aria-label="detalhes" /> para escolher o modo,
-            liberar exceções ou criar regras só para aquele aparelho.
+            {t('O interruptor')}{' '}<strong className="text-ink-2">{t('Acesso')}</strong>{' '}{t('isola o dispositivo na hora: o DNS passa a recusar todas as consultas dele. Use')}{' '}<Ellipsis className="inline size-3.5" aria-label={t('detalhes')} />{' '}{t('para escolher o modo, liberar exceções ou criar regras só para aquele aparelho.')}
           </p>
         </div>
       </div>
@@ -85,17 +84,17 @@ export function Devices({ openId, onOpen }: { openId: string | null; onOpen: (id
         <div className="flex flex-wrap items-center gap-3 border-b border-line p-4">
           <div className="relative w-full sm:w-72">
             <Search className="pointer-events-none absolute top-2.5 left-3 size-4 text-muted" aria-hidden />
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nome, IP, MAC, fabricante…" className="pl-9" aria-label="Buscar dispositivo" />
+            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('Nome, IP, MAC, fabricante…')} className="pl-9" aria-label={t('Buscar dispositivo')} />
           </div>
           <Segmented
-            label="Mostrar"
+            label={t('Mostrar')}
             value={filter}
             onChange={setFilter}
             options={[
-              { value: 'all', label: 'Todos' },
-              { value: 'active', label: 'Ativos' },
-              { value: 'isolated', label: 'Isolados' },
-              { value: 'rules', label: 'Com regras' },
+              { value: 'all', label: t('Todos') },
+              { value: 'active', label: t('Ativos') },
+              { value: 'isolated', label: t(t('Isolados')) },
+              { value: 'rules', label: t('Com regras') },
             ]}
           />
         </div>
@@ -103,13 +102,13 @@ export function Devices({ openId, onOpen }: { openId: string | null; onOpen: (id
           <table className="w-full min-w-[760px] text-sm">
             <thead className="text-left text-xs text-muted">
               <tr className="border-b border-line">
-                <th className="px-4 py-2.5 font-medium">Dispositivo</th>
-                <th className="px-3 py-2.5 font-medium">Endereço</th>
-                <th className="px-3 py-2.5 font-medium">Visto</th>
-                <th className="px-3 py-2.5 text-right font-medium">Consultas</th>
-                <th className="px-3 py-2.5 text-right font-medium">Bloqueadas</th>
-                <th className="px-3 py-2.5 font-medium">Estado</th>
-                <th className="px-3 py-2.5 font-medium">Acesso</th>
+                <th className="px-4 py-2.5 font-medium">{t('Dispositivo')}</th>
+                <th className="px-3 py-2.5 font-medium">{t('Endereço')}</th>
+                <th className="px-3 py-2.5 font-medium">{t('Visto')}</th>
+                <th className="px-3 py-2.5 text-right font-medium">{t('Consultas')}</th>
+                <th className="px-3 py-2.5 text-right font-medium">{t('Bloqueadas')}</th>
+                <th className="px-3 py-2.5 font-medium">{t('Estado')}</th>
+                <th className="px-3 py-2.5 font-medium">{t('Acesso')}</th>
                 <th className="w-10 px-3 py-2.5" />
               </tr>
             </thead>
@@ -136,7 +135,7 @@ export function Devices({ openId, onOpen }: { openId: string | null; onOpen: (id
                     <td className="px-3 py-2.5 font-mono text-xs text-ink-2">
                       {d.ips[0] ?? '—'}
                       {d.ips.length > 1 && <span className="text-muted"> +{d.ips.length - 1}</span>}
-                      <span className="block text-muted">{d.mac ?? 'MAC desconhecido'}</span>
+                      <span className="block text-muted">{d.mac ?? t('MAC desconhecido')}</span>
                     </td>
                     <td className="px-3 py-2.5 text-xs whitespace-nowrap text-ink-2">{ago(d.last_seen, now)}</td>
                     <td className="tabular px-3 py-2.5 text-right text-ink-2">{fmtInt(d.queries)}</td>
@@ -146,23 +145,23 @@ export function Devices({ openId, onOpen }: { openId: string | null; onOpen: (id
                     </td>
                     <td className="px-3 py-2.5">
                       {d.settings.isolated ? (
-                        <StatusBadge tone="critical">Isolado</StatusBadge>
+                        <StatusBadge tone="critical">{t('Isolado')}</StatusBadge>
                       ) : rules ? (
-                        <StatusBadge tone="accent">Regras próprias</StatusBadge>
+                        <StatusBadge tone="accent">{t('Regras próprias')}</StatusBadge>
                       ) : (
-                        <StatusBadge tone="neutral">Normal</StatusBadge>
+                        <StatusBadge tone="neutral">{t('Normal')}</StatusBadge>
                       )}
                     </td>
                     <td className="px-3 py-2.5">
                       <Switch
                         checked={!d.settings.isolated}
-                        label={d.settings.isolated ? `Liberar ${d.display}` : `Isolar ${d.display}`}
+                        label={d.settings.isolated ? t('Liberar {nome}', { nome: d.display }) : t('Isolar {nome}', { nome: d.display })}
                         disabled={toggle.isPending && toggle.variables?.d.id === d.id}
                         onChange={(on) => toggle.mutate({ d, on })}
                       />
                     </td>
                     <td className="px-3 py-2.5">
-                      <button onClick={() => onOpen(d.id)} aria-label={`Detalhes de ${d.display}`} className="rounded-md p-1.5 text-muted hover:bg-surface-3 hover:text-ink">
+                      <button onClick={() => onOpen(d.id)} aria-label={t('Detalhes de {nome}', { nome: d.display })} className="rounded-md p-1.5 text-muted hover:bg-surface-3 hover:text-ink">
                         <Ellipsis className="size-4" />
                       </button>
                     </td>
@@ -174,7 +173,7 @@ export function Devices({ openId, onOpen }: { openId: string | null; onOpen: (id
           {!isLoading && rows.length === 0 && (
             <p className="flex items-center justify-center gap-2 py-10 text-sm text-muted">
               <ShieldBan className="size-4" aria-hidden />
-              {data.length ? 'Nenhum dispositivo com esse filtro.' : 'Nenhum dispositivo consultou o DNS ainda.'}
+              {data.length ? t('Nenhum dispositivo com esse filtro.') : t('Nenhum dispositivo consultou o DNS ainda.')}
             </p>
           )}
         </div>

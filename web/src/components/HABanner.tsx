@@ -4,6 +4,7 @@ import { api } from '../api'
 import type { HAStatus } from '../types'
 import { ago } from '../lib/format'
 import { cx } from './ui'
+import { t } from '../lib/i18n'
 
 export function useHA() {
   return useQuery({ queryKey: ['ha'], queryFn: () => api<HAStatus>('/api/ha'), refetchInterval: 5000 })
@@ -25,14 +26,14 @@ export function HABanner() {
     >
       {bad ? <CircleAlert className="size-4" aria-hidden /> : <Copy className="size-4 text-accent" aria-hidden />}
       <span>
-        <strong className="text-ink">Réplica</strong> de{' '}
+        <strong className="text-ink">{t('Réplica')}</strong>{' '}{t('de')}{' '}
         <a href={r.primary_url} className="font-mono text-accent hover:underline">
           {r.primary_url}
         </a>
-        : a configuração é feita no principal.
+        {t(': a configuração é feita no principal.')}
       </span>
       <span className="ml-auto">
-        {bad ? 'Sem contato com o principal: continuo atendendo com a última configuração.' : `Sincronizado ${ago(r.last_sync)}.`}
+        {bad ? t('Sem contato com o principal: continuo atendendo com a última configuração.') : t('Sincronizado {quando}.', { quando: ago(r.last_sync) })}
       </span>
     </div>
   )
