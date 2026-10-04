@@ -43,6 +43,21 @@ filter:
   deny: []
   allow: []
 
+# Radar de dispositivos.
+clients:
+  # Onde perguntar o nome dos dispositivos (PTR): "auto" usa o gateway padrão,
+  # que normalmente conhece os nomes do DHCP; "" desliga; ou "192.168.0.1:53".
+  ptr_server: auto
+  # Resposta padrão para um dispositivo isolado: null, nxdomain, refused ou drop.
+  isolate_mode: refused
+  neighbor_interval: 1m     # leitura da tabela ARP/NDP (MAC dos dispositivos)
+  vendor_db_max_age: 720h   # base de fabricantes (OUI), baixada do Wireshark
+
+# API de controle (usada pelos comandos "heimdalldns clients", "isolate" etc.).
+api:
+  listen: 127.0.0.1:8053    # "" desliga
+  token: ""                 # vazio = gerado em <data_dir>/api.token
+
 # Respostas locais (A/AAAA), por exemplo para equipamentos da rede.
 local_records:
   # nas.casa: ["192.168.0.10"]

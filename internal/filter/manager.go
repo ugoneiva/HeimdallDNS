@@ -135,19 +135,8 @@ func (m *Manager) Refresh(ctx context.Context) {
 func (m *Manager) rebuild() {
 	start := time.Now()
 	b := NewBuilder()
-	for _, line := range m.opts.Deny {
-		if b.AddLine(line, true) == lineBad {
-			m.log.Warn("regra própria inválida em deny", "regra", line)
-		}
-	}
-	for _, line := range m.opts.Allow {
-		// Na lista de exceções, a regra simples já é uma exceção.
-		if !strings.HasPrefix(strings.TrimSpace(line), "@@") {
-			line = "@@" + strings.TrimSpace(line)
-		}
-		if b.AddLine(line, true) == lineBad {
-			m.log.Warn("regra própria inválida em allow", "regra", line)
-		}
+	for _, r := range b.AddUserRules(m.opts.Allow, m.opts.Deny) {
+		m.log.Warn("regra própria inválida", "regra", r)
 	}
 	for i, l := range m.opts.Lists {
 		if !l.Enabled {

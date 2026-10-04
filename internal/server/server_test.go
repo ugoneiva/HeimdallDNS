@@ -11,6 +11,7 @@ import (
 	"github.com/miekg/dns"
 
 	"github.com/ugoneiva/HeimdallDNS/internal/cache"
+	"github.com/ugoneiva/HeimdallDNS/internal/clients"
 	"github.com/ugoneiva/HeimdallDNS/internal/config"
 	"github.com/ugoneiva/HeimdallDNS/internal/filter"
 	"github.com/ugoneiva/HeimdallDNS/internal/upstream"
@@ -203,5 +204,94 @@ func TestNXDomainCached(t *testing.T) {
 	}
 	if n.Load() != 1 {
 		t.Errorf("NXDOMAIN consultado %d vezes", n.Load())
+	}
+}
+
+func startWithClients(t *testing.T) (string, *clients.Registry, *atomic.Int64) {
+	t.Helper()
+	addr, n := fakeUpstream(t)
+	ups, err := upstream.New(upstream.Options{Servers: []string{addr}, Mode: upstream.ModeFastest, Timeout: 2 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ups.Close() })
+	reg, err := clients.NewRegistry(clients.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := filter.NewBuilder()
+	b.AddLine("||bloqueado.test^", false)
+	mt := b.Build()
+	srv := New(Options{
+		Listen:       []string{"127.0.0.1:0"},
+		Allowed:      []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")},
+		BlockMode:    config.BlockNull,
+		BlockTTL:     10,
+		LocalRecords: map[string][]netip.Addr{"nas.casa.": {netip.MustParseAddr("192.168.0.10")}},
+		Cache:        cache.New(cache.Options{Size: 100}),
+		Filter:       func() *filter.Matcher { return mt },
+		Upstream:     ups,
+		Clients:      reg,
+	})
+	if err := srv.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { srv.Shutdown(t.Context()) })
+	return srv.Addrs()[0].String(), reg, n
+}
+
+func TestIsolatedClient(t *testing.T) {
+	addr, reg, n := startWithClients(t)
+	query(t, addr, "exemplo.com", dns.TypeA, "udp") // registra o cliente
+	c, err := reg.Find("127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reg.Isolate(c, clients.ModeRefused, "teste", []string{"liberado.com"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"exemplo.com", "nas.casa", "outro.com"} {
+		if r := query(t, addr, name, dns.TypeA, "udp"); r.Rcode != dns.RcodeRefused {
+			t.Errorf("%s: rcode = %s; cliente isolado", name, dns.RcodeToString[r.Rcode])
+		}
+	}
+	if ip := firstA(t, query(t, addr, "api.liberado.com", dns.TypeA, "udp")); ip != "1.2.3.4" {
+		t.Errorf("exceção do isolamento: %s", ip)
+	}
+	if err := reg.Isolate(c, clients.ModeNXDomain, "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if r := query(t, addr, "exemplo.com", dns.TypeA, "udp"); r.Rcode != dns.RcodeNameError {
+		t.Errorf("modo nxdomain: %s", dns.RcodeToString[r.Rcode])
+	}
+	reg.Release(c)
+	if ip := firstA(t, query(t, addr, "exemplo.com", dns.TypeA, "udp")); ip != "1.2.3.4" {
+		t.Errorf("liberado: %s", ip)
+	}
+	v := c.View()
+	if v.Blocked != 4 || v.Queries != 7 {
+		t.Errorf("contadores = %d bloqueadas / %d consultas", v.Blocked, v.Queries)
+	}
+	_ = n
+}
+
+func TestClientRulesInServer(t *testing.T) {
+	addr, reg, _ := startWithClients(t)
+	query(t, addr, "exemplo.com", dns.TypeA, "udp")
+	c, _ := reg.Find("127.0.0.1")
+	reg.Update(c, func(s *clients.Settings) error {
+		s.Deny = []string{"service:tiktok"}
+		s.Allow = []string{"bloqueado.test"}
+		return nil
+	})
+	if ip := firstA(t, query(t, addr, "www.tiktok.com", dns.TypeA, "udp")); ip != "0.0.0.0" {
+		t.Errorf("regra do cliente: %s", ip)
+	}
+	if ip := firstA(t, query(t, addr, "ads.bloqueado.test", dns.TypeA, "udp")); ip != "1.2.3.4" {
+		t.Errorf("exceção do cliente deveria vencer a lista global: %s", ip)
+	}
+	reg.Update(c, func(s *clients.Settings) error { s.Allow = nil; s.SkipGlobalLists = true; return nil })
+	if ip := firstA(t, query(t, addr, "ads.bloqueado.test", dns.TypeA, "udp")); ip != "1.2.3.4" {
+		t.Errorf("sem listas globais: %s", ip)
 	}
 }

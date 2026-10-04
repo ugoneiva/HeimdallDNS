@@ -34,6 +34,8 @@ type Config struct {
 	Upstream     Upstream            `yaml:"upstream"`
 	Cache        Cache               `yaml:"cache"`
 	Filter       Filter              `yaml:"filter"`
+	Clients      Clients             `yaml:"clients"`
+	API          API                 `yaml:"api"`
 	LocalRecords map[string][]string `yaml:"local_records"`
 	DataDir      string              `yaml:"data_dir"`
 	Log          Log                 `yaml:"log"`
@@ -78,6 +80,23 @@ type List struct {
 
 func (l List) IsEnabled() bool { return l.Enabled == nil || *l.Enabled }
 
+type Clients struct {
+	// Servidor para os nomes reversos (PTR) dos dispositivos: "auto" usa o
+	// gateway padrão (o roteador conhece os nomes do DHCP); "" desliga.
+	PTRServer string `yaml:"ptr_server"`
+	// Resposta padrão para um cliente isolado.
+	IsolateMode      string        `yaml:"isolate_mode"`
+	NeighborInterval time.Duration `yaml:"neighbor_interval"`
+	// Base de fabricantes (OUI): baixada se faltar ou ficar mais velha que isso.
+	VendorDBMaxAge time.Duration `yaml:"vendor_db_max_age"`
+}
+
+type API struct {
+	Listen string `yaml:"listen"` // "" desliga
+	// Token de acesso. Vazio = gerado em <data_dir>/api.token na primeira vez.
+	Token string `yaml:"token"`
+}
+
 type Log struct {
 	Level   string `yaml:"level"`   // debug, info, warn, error
 	Queries bool   `yaml:"queries"` // registra cada consulta no log
@@ -121,6 +140,13 @@ func Default() *Config {
 			}},
 			UpdateInterval: 24 * time.Hour,
 		},
+		Clients: Clients{
+			PTRServer:        "auto",
+			IsolateMode:      BlockRefused,
+			NeighborInterval: time.Minute,
+			VendorDBMaxAge:   30 * 24 * time.Hour,
+		},
+		API:     API{Listen: "127.0.0.1:8053"},
 		DataDir: "/var/lib/heimdalldns",
 		Log:     Log{Level: "info"},
 	}
@@ -151,6 +177,11 @@ func (c *Config) Validate() error {
 	case BlockNull, BlockNXDomain, BlockRefused, BlockDrop:
 	default:
 		errs = append(errs, fmt.Errorf("dns.block_mode %q: use null, nxdomain, refused ou drop", c.DNS.BlockMode))
+	}
+	switch c.Clients.IsolateMode {
+	case BlockNull, BlockNXDomain, BlockRefused, BlockDrop:
+	default:
+		errs = append(errs, fmt.Errorf("clients.isolate_mode %q: use null, nxdomain, refused ou drop", c.Clients.IsolateMode))
 	}
 	if _, err := c.AllowedPrefixes(); err != nil {
 		errs = append(errs, err)

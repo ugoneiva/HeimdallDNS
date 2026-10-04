@@ -1,13 +1,19 @@
-// Comando heimdalldns: servidor DNS com filtro de bloqueio.
+// Comando heimdalldns: servidor DNS com filtro e radar de dispositivos.
+// Sem subcomando, roda o servidor; com subcomando (clients, isolate…),
+// conversa com um servidor em execução pela API.
 package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -15,10 +21,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ugoneiva/HeimdallDNS/internal/api"
 	"github.com/ugoneiva/HeimdallDNS/internal/cache"
+	"github.com/ugoneiva/HeimdallDNS/internal/clients"
 	"github.com/ugoneiva/HeimdallDNS/internal/config"
 	"github.com/ugoneiva/HeimdallDNS/internal/filter"
 	"github.com/ugoneiva/HeimdallDNS/internal/server"
+	"github.com/ugoneiva/HeimdallDNS/internal/store"
 	"github.com/ugoneiva/HeimdallDNS/internal/upstream"
 )
 
@@ -27,32 +36,53 @@ var version = "dev"
 const defaultConfig = "/etc/heimdalldns/heimdalldns.yaml"
 
 func main() {
-	if err := run(); err != nil {
+	var err error
+	if len(os.Args) > 1 && isCommand(os.Args[1]) {
+		err = runCLI(os.Args[1], os.Args[2:])
+	} else {
+		err = runServer()
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "heimdalldns:", err)
 		os.Exit(1)
 	}
 }
 
-func run() error {
+// loadConfig lê o arquivo; se ele não existir e o caminho for o padrão, usa os
+// valores padrão (devolve missing = true).
+func loadConfig(path string, explicit bool) (cfg *config.Config, missing bool, err error) {
+	cfg, err = config.Load(path)
+	if errors.Is(err, fs.ErrNotExist) && !explicit {
+		return config.Default(), true, nil
+	}
+	return cfg, false, err
+}
+
+func runServer() error {
 	cfgPath := flag.String("config", defaultConfig, "arquivo de configuração YAML")
 	listen := flag.String("listen", "", "endereços DNS separados por vírgula (substitui dns.listen)")
+	apiListen := flag.String("api", "", "endereço da API (substitui api.listen; \"off\" desliga)")
 	dataDir := flag.String("data-dir", "", "diretório de dados (substitui data_dir)")
 	showVersion := flag.Bool("version", false, "mostra a versão")
+	flag.Usage = usage
 	flag.Parse()
 	if *showVersion {
 		fmt.Println("heimdalldns", version)
 		return nil
 	}
 
-	cfg, err := config.Load(*cfgPath)
-	switch {
-	case errors.Is(err, fs.ErrNotExist) && !flagSet("config"):
-		cfg = config.Default()
-	case err != nil:
+	cfg, missing, err := loadConfig(*cfgPath, flagSet(flag.CommandLine, "config"))
+	if err != nil {
 		return err
 	}
 	if *listen != "" {
 		cfg.DNS.Listen = strings.Split(*listen, ",")
+	}
+	if *apiListen != "" {
+		cfg.API.Listen = *apiListen
+		if *apiListen == "off" {
+			cfg.API.Listen = ""
+		}
 	}
 	if *dataDir != "" {
 		cfg.DataDir = *dataDir
@@ -63,13 +93,23 @@ func run() error {
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: parseLevel(cfg.Log.Level)}))
 	slog.SetDefault(log)
-	if errors.Is(err, fs.ErrNotExist) {
+	if missing {
 		log.Warn("arquivo de configuração não encontrado; usando os padrões", "arquivo", *cfgPath)
 	}
 	log.Info("iniciando HeimdallDNS", "versao", version)
+	started := time.Now()
 
+	if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
+		return err
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	db, err := store.Open(filepath.Join(cfg.DataDir, "heimdall.db"))
+	if err != nil {
+		return err
+	}
+	defer db.Close()
 
 	ups, err := upstream.New(upstream.Options{
 		Servers:   cfg.Upstream.Servers,
@@ -98,28 +138,74 @@ func run() error {
 	})
 	flt.Start(ctx)
 
+	reg, err := newRegistry(cfg, db, log.With("componente", "radar"))
+	if err != nil {
+		return err
+	}
+	regDone := make(chan struct{})
+	go func() {
+		reg.Run(ctx, cfg.Clients.NeighborInterval)
+		close(regDone)
+	}()
+	go func() {
+		oui, err := clients.LoadOUI(ctx, filepath.Join(cfg.DataDir, "manuf"), cfg.Clients.VendorDBMaxAge)
+		if err != nil {
+			log.Warn("base de fabricantes indisponível", "erro", err)
+			return
+		}
+		reg.SetVendors(oui)
+	}()
+
 	allowed, _ := cfg.AllowedPrefixes()
 	local, _ := cfg.LocalAddrs()
+	dnsCache := cache.New(cache.Options{
+		Size:       cfg.Cache.Size,
+		MinTTL:     cfg.Cache.MinTTL,
+		MaxTTL:     cfg.Cache.MaxTTL,
+		ServeStale: cfg.Cache.ServeStale,
+	})
 	srv := server.New(server.Options{
 		Listen:       cfg.DNS.Listen,
 		Allowed:      allowed,
 		BlockMode:    cfg.DNS.BlockMode,
 		BlockTTL:     cfg.DNS.BlockTTL,
 		LocalRecords: local,
-		Cache: cache.New(cache.Options{
-			Size:       cfg.Cache.Size,
-			MinTTL:     cfg.Cache.MinTTL,
-			MaxTTL:     cfg.Cache.MaxTTL,
-			ServeStale: cfg.Cache.ServeStale,
-		}),
-		Filter:   flt.Matcher,
-		Upstream: ups,
-		Timeout:  cfg.Upstream.Timeout + time.Second,
-		Logger:   log.With("componente", "dns"),
-		OnQuery:  queryLogger(log, cfg.Log.Queries),
+		Cache:        dnsCache,
+		Filter:       flt.Matcher,
+		Upstream:     ups,
+		Clients:      reg,
+		Timeout:      cfg.Upstream.Timeout + time.Second,
+		Logger:       log.With("componente", "dns"),
+		OnQuery:      queryLogger(log, cfg.Log.Queries),
 	})
 	if err := srv.Start(); err != nil {
 		return err
+	}
+
+	var httpSrv *http.Server
+	if cfg.API.Listen != "" {
+		token, err := apiToken(cfg)
+		if err != nil {
+			return err
+		}
+		ln, err := net.Listen("tcp", cfg.API.Listen)
+		if err != nil {
+			return fmt.Errorf("api %s: %w", cfg.API.Listen, err)
+		}
+		httpSrv = &http.Server{
+			Handler: api.New(api.Deps{
+				Context: ctx, Token: token, Version: version, Started: started,
+				Server: srv, Cache: dnsCache, Upstream: ups, Filter: flt, Clients: reg,
+				Logger: log.With("componente", "api"),
+			}),
+			ReadHeaderTimeout: 10 * time.Second,
+		}
+		go func() {
+			if err := httpSrv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Error("API parou", "erro", err)
+			}
+		}()
+		log.Info("API ouvindo", "endereco", ln.Addr().String())
 	}
 
 	// SIGHUP baixa as listas de novo.
@@ -133,13 +219,66 @@ func run() error {
 		case <-ctx.Done():
 			log.Info("encerrando")
 			sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			if httpSrv != nil {
+				_ = httpSrv.Shutdown(sctx)
+			}
 			srv.Shutdown(sctx)
 			cancel()
+			<-regDone // grava os clientes
 			c := srv.Counters()
-			log.Info("consultas atendidas", "total", c.Total, "bloqueadas", c.Blocked, "cache", c.Cached)
+			log.Info("consultas atendidas", "total", c.Total, "bloqueadas", c.Blocked, "isoladas", c.Isolated, "cache", c.Cached)
 			return nil
 		}
 	}
+}
+
+func newRegistry(cfg *config.Config, db *store.Store, log *slog.Logger) (*clients.Registry, error) {
+	opts := clients.Options{
+		Store:       db,
+		Neighbors:   clients.Neighbors,
+		IsolateMode: cfg.Clients.IsolateMode,
+		Logger:      log,
+	}
+	switch ptr := cfg.Clients.PTRServer; ptr {
+	case "":
+	case "auto":
+		if gw, err := clients.DefaultGateway(); err == nil {
+			opts.PTR = clients.PTRLookup(net.JoinHostPort(gw.String(), "53"))
+			log.Info("nomes reversos pelo gateway", "servidor", gw)
+		} else {
+			log.Warn("sem gateway para os nomes reversos", "erro", err)
+		}
+	default:
+		if _, _, err := net.SplitHostPort(ptr); err != nil {
+			ptr = net.JoinHostPort(ptr, "53")
+		}
+		opts.PTR = clients.PTRLookup(ptr)
+	}
+	return clients.NewRegistry(opts)
+}
+
+// apiToken usa o token da configuração ou o de <data_dir>/api.token, criando
+// um aleatório na primeira vez.
+func apiToken(cfg *config.Config) (string, error) {
+	if cfg.API.Token != "" {
+		return cfg.API.Token, nil
+	}
+	path := filepath.Join(cfg.DataDir, "api.token")
+	if b, err := os.ReadFile(path); err == nil {
+		if t := strings.TrimSpace(string(b)); t != "" {
+			return t, nil
+		}
+	}
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	t := hex.EncodeToString(b)
+	if err := os.WriteFile(path, []byte(t+"\n"), 0o600); err != nil {
+		return "", err
+	}
+	slog.Info("token da API criado", "arquivo", path)
+	return t, nil
 }
 
 func queryLogger(log *slog.Logger, enabled bool) func(server.Event) {
@@ -147,7 +286,7 @@ func queryLogger(log *slog.Logger, enabled bool) func(server.Event) {
 		return nil
 	}
 	return func(e server.Event) {
-		log.Info("consulta", "cliente", e.Client, "nome", e.Name, "tipo", e.Type,
+		log.Info("consulta", "cliente", e.Client, "nome_cliente", e.Display, "nome", e.Name, "tipo", e.Type,
 			"status", e.Status, "rcode", e.Rcode, "regra", e.Rule, "upstream", e.Upstream,
 			"tempo", e.Duration.Round(time.Microsecond))
 	}
@@ -161,12 +300,35 @@ func parseLevel(s string) slog.Level {
 	return l
 }
 
-func flagSet(name string) bool {
+func flagSet(fs *flag.FlagSet, name string) bool {
 	set := false
-	flag.Visit(func(f *flag.Flag) {
+	fs.Visit(func(f *flag.Flag) {
 		if f.Name == name {
 			set = true
 		}
 	})
 	return set
+}
+
+func usage() {
+	fmt.Fprintf(os.Stderr, `Uso:
+  heimdalldns [opções]              roda o servidor
+  heimdalldns <comando> [opções]    controla um servidor em execução
+
+Comandos:
+  status                            resumo do servidor
+  clients                           lista os dispositivos
+  client  <ref>                     detalhes de um dispositivo
+  name    <ref> <nome>              dá um nome ao dispositivo
+  isolate <ref> [-mode m] [-reason texto] [-except dom1,dom2]
+  release <ref>                     tira do isolamento
+  rules   <ref> [-deny r1,r2] [-allow r1,r2] [-global=false]
+  forget  <ref>                     esquece o dispositivo
+  services                          serviços para regras (service:tiktok, service:social…)
+
+<ref> é o id, IP, MAC ou nome do dispositivo.
+
+Opções do servidor:
+`)
+	flag.PrintDefaults()
 }

@@ -16,6 +16,7 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	"github.com/ugoneiva/HeimdallDNS/internal/cache"
+	"github.com/ugoneiva/HeimdallDNS/internal/clients"
 	"github.com/ugoneiva/HeimdallDNS/internal/config"
 	"github.com/ugoneiva/HeimdallDNS/internal/filter"
 )
@@ -26,10 +27,11 @@ const (
 	StatusCached    = "cached"
 	StatusStale     = "stale" // do cache, vencida, renovando em segundo plano
 	StatusBlocked   = "blocked"
-	StatusLocal     = "local"   // registro local
-	StatusRefused   = "refused" // cliente fora das redes permitidas
-	StatusError     = "error"   // upstream falhou (SERVFAIL)
-	StatusInvalid   = "invalid" // pergunta malformada
+	StatusIsolated  = "isolated" // cliente isolado (kill switch)
+	StatusLocal     = "local"    // registro local
+	StatusRefused   = "refused"  // cliente fora das redes permitidas
+	StatusError     = "error"    // upstream falhou (SERVFAIL)
+	StatusInvalid   = "invalid"  // pergunta malformada
 )
 
 // ednsSize é o tamanho de UDP anunciado (recomendação do DNS Flag Day 2020).
@@ -39,6 +41,8 @@ const ednsSize = 1232
 type Event struct {
 	Time     time.Time     `json:"time"`
 	Client   netip.Addr    `json:"client"`
+	ClientID string        `json:"client_id,omitempty"`
+	Display  string        `json:"client_name,omitempty"`
 	Proto    string        `json:"proto"`
 	Name     string        `json:"name"`
 	Type     string        `json:"type"`
@@ -63,6 +67,7 @@ type Options struct {
 	Cache        *cache.Cache
 	Filter       func() *filter.Matcher
 	Upstream     Exchanger
+	Clients      *clients.Registry // nil = sem radar
 	Timeout      time.Duration
 	Logger       *slog.Logger
 	OnQuery      func(Event) // chamado para cada consulta; não deve bloquear
@@ -73,6 +78,7 @@ type Counters struct {
 	Forwarded uint64 `json:"forwarded"`
 	Cached    uint64 `json:"cached"`
 	Blocked   uint64 `json:"blocked"`
+	Isolated  uint64 `json:"isolated"`
 	Local     uint64 `json:"local"`
 	Refused   uint64 `json:"refused"`
 	Errors    uint64 `json:"errors"`
@@ -85,7 +91,7 @@ type Server struct {
 	servers []*dns.Server
 	addrs   []net.Addr
 
-	total, forwarded, cached, blocked, local, refused, errs atomic.Uint64
+	total, forwarded, cached, blocked, isolated, local, refused, errs atomic.Uint64
 }
 
 func New(opts Options) *Server {
@@ -146,7 +152,7 @@ func (s *Server) Shutdown(ctx context.Context) {
 func (s *Server) Counters() Counters {
 	return Counters{
 		Total: s.total.Load(), Forwarded: s.forwarded.Load(), Cached: s.cached.Load(),
-		Blocked: s.blocked.Load(), Local: s.local.Load(), Refused: s.refused.Load(), Errors: s.errs.Load(),
+		Blocked: s.blocked.Load(), Isolated: s.isolated.Load(), Local: s.local.Load(), Refused: s.refused.Load(), Errors: s.errs.Load(),
 	}
 }
 
@@ -158,7 +164,11 @@ func (s *Server) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	ev.Client = addrOf(w.RemoteAddr())
 	s.total.Add(1)
 
-	resp := s.handle(r, &ev)
+	var cl *clients.Client
+	if s.opts.Clients != nil && s.allowed(ev.Client) {
+		cl = s.opts.Clients.Observe(ev.Client, ev.Time)
+	}
+	resp := s.handle(r, &ev, cl.Policy())
 	if resp != nil {
 		s.write(w, r, resp, ev.Proto)
 		ev.Rcode = dns.RcodeToString[resp.Rcode]
@@ -177,6 +187,10 @@ func (s *Server) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		s.cached.Add(1)
 	case StatusBlocked:
 		s.blocked.Add(1)
+		cl.CountBlocked()
+	case StatusIsolated:
+		s.isolated.Add(1)
+		cl.CountBlocked()
 	case StatusLocal:
 		s.local.Add(1)
 	case StatusRefused:
@@ -190,7 +204,7 @@ func (s *Server) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 }
 
 // handle devolve a resposta (sem EDNS; write cuida disso) ou nil para não responder.
-func (s *Server) handle(r *dns.Msg, ev *Event) *dns.Msg {
+func (s *Server) handle(r *dns.Msg, ev *Event, pol *clients.Policy) *dns.Msg {
 	if !s.allowed(ev.Client) {
 		ev.Status = StatusRefused
 		return reply(r, dns.RcodeRefused)
@@ -210,17 +224,37 @@ func (s *Server) handle(r *dns.Msg, ev *Event) *dns.Msg {
 		return reply(r, dns.RcodeNotImplemented)
 	}
 
+	if pol != nil {
+		ev.ClientID, ev.Display = pol.ClientID, pol.Display
+	}
+	// Isolamento vem antes de tudo, inclusive dos registros locais.
+	if pol.IsolatedFor(ev.Name) {
+		ev.Status, ev.Rule = StatusIsolated, "cliente isolado"
+		return s.blockedAnswer(r, pol.IsolateMode)
+	}
+
 	if m := s.localAnswer(r, ev.Name); m != nil {
 		ev.Status = StatusLocal
 		return m
 	}
 
-	switch res := s.opts.Filter().Match(ev.Name); res.Verdict {
+	// Regras do cliente primeiro; depois as listas globais (se o cliente usa).
+	global := true
+	switch res := pol.Match(ev.Name); res.Verdict {
 	case filter.Blocked:
-		ev.Status, ev.Rule = StatusBlocked, res.Rule
-		return s.blockedAnswer(r, ev.Name)
+		ev.Status, ev.Rule = StatusBlocked, "cliente: "+res.Rule
+		return s.blockedAnswer(r, s.opts.BlockMode)
 	case filter.Allowed:
-		ev.Rule = "@@" + res.Rule // liberado por exceção; segue o fluxo normal
+		ev.Rule, global = "cliente: @@"+res.Rule, false
+	}
+	if global && (pol == nil || !pol.SkipGlobal) {
+		switch res := s.opts.Filter().Match(ev.Name); res.Verdict {
+		case filter.Blocked:
+			ev.Status, ev.Rule = StatusBlocked, res.Rule
+			return s.blockedAnswer(r, s.opts.BlockMode)
+		case filter.Allowed:
+			ev.Rule = "@@" + res.Rule // liberado por exceção; segue o fluxo normal
+		}
 	}
 
 	do := false
@@ -305,10 +339,10 @@ func (s *Server) localAnswer(r *dns.Msg, name string) *dns.Msg {
 	return m
 }
 
-func (s *Server) blockedAnswer(r *dns.Msg, name string) *dns.Msg {
+func (s *Server) blockedAnswer(r *dns.Msg, mode string) *dns.Msg {
 	q := r.Question[0]
 	var m *dns.Msg
-	switch s.opts.BlockMode {
+	switch mode {
 	case config.BlockDrop:
 		return nil
 	case config.BlockRefused:
