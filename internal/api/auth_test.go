@@ -33,7 +33,10 @@ type panel struct {
 
 func init() { bcryptCost = bcrypt.MinCost }
 
-func newPanel(t *testing.T) *panel {
+func newPanel(t *testing.T) *panel { return newPanelWith(t, nil) }
+
+// newPanelWith permite ajustar as dependências (ex.: ligar o AD).
+func newPanelWith(t *testing.T, tweak func(*Deps)) *panel {
 	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "h.db"))
 	if err != nil {
@@ -47,8 +50,12 @@ func newPanel(t *testing.T) *panel {
 		"index.html":        {Data: []byte("<html>painel</html>")},
 		"assets/app-123.js": {Data: []byte("console.log(1)")},
 	}
-	a, h := build(Deps{Context: context.Background(), Token: "segredo", Store: st, Clients: reg, Filter: flt, UI: ui,
-		Logger: slog.New(slog.DiscardHandler)})
+	d := Deps{Context: context.Background(), Token: "segredo", Store: st, Clients: reg, Filter: flt, UI: ui,
+		Logger: slog.New(slog.DiscardHandler)}
+	if tweak != nil {
+		tweak(&d)
+	}
+	a, h := build(d)
 	ts := httptest.NewServer(h)
 	t.Cleanup(ts.Close)
 	jar, _ := cookiejar.New(nil)

@@ -4,6 +4,8 @@ github.com/AdguardTeam/dnsproxy v0.86.0 h1:t9966vx4c3Wm6/9dhM4YI9L6uvIJ/EMNw9Jpb
 github.com/AdguardTeam/dnsproxy v0.86.0/go.mod h1:6kCM5M/gtuQr/0BjtnReHlK6+N0BTee+WHOq3m1JNq4=
 github.com/AdguardTeam/golibs v0.35.13 h1:sflm5/sWhiGwUXNAZObiqVMkdg8HeYVFK2A0oJ27hbU=
 github.com/AdguardTeam/golibs v0.35.13/go.mod h1:8EEGG4auTDd8HV3tBETXLkuxDH9lk9vvFbJn+wbmypg=
+github.com/Azure/go-ntlmssp v0.1.1 h1:l+FM/EEMb0U9QZE7mKNEDw5Mu3mFiaa2GKOoTSsNDPw=
+github.com/Azure/go-ntlmssp v0.1.1/go.mod h1:NYqdhxd/8aAct/s4qSYZEerdPuH1liG2/X9DiVTbhpk=
 github.com/ameshkov/dnsstamps v1.0.3 h1:Srzik+J9mivH1alRACTbys2xOxs0lRH9qnTA7Y1OYVo=
 github.com/ameshkov/dnsstamps v1.0.3/go.mod h1:Ii3eUu73dx4Vw5O4wjzmT5+lkCwovjzaEZZ4gKyIH5A=
 github.com/bluele/gcache v0.0.2 h1:WcbfdXICg7G/DGBh1PFfcirkWOQV+v077yF1pSy3DGw=
@@ -12,6 +14,10 @@ github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
+github.com/go-asn1-ber/asn1-ber v1.5.8 h1:H9AZkK22UOmfX8J84ubyaZxKJZ3FMHVwn8swoMML7iQ=
+github.com/go-asn1-ber/asn1-ber v1.5.8/go.mod h1:hEBeB/ic+5LoWskz+yKT7vGhhPYkProFKoKdwZRWMe0=
+github.com/go-ldap/ldap/v3 v3.4.14 h1:D6PYdEgsaVzsXyr6w/yDC06Ria4uUhWm+Rb+er8lfAs=
+github.com/go-ldap/ldap/v3 v3.4.14/go.mod h1:S4eJUMUNjDkE0ZJtIZdybwyb03sGGLW6gxXT1Hs8VKA=
 github.com/google/pprof v0.0.0-20260802141513-ef3492d7dac3 h1:LMLX+LgTNWpfvCBdFebv6EsYotImrt/Ppc5cXIriCSo=
 github.com/google/pprof v0.0.0-20260802141513-ef3492d7dac3/go.mod h1:jl5iWTm0/hd5PjEYEOuwAJ57L/CibdZfrqZ5XA5GrCk=
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=

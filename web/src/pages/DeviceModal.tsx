@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Lock, LockOpen, Trash } from 'lucide-react'
 import { api, qs } from '../api'
-import type { Device, Ranked, Service, Summary } from '../types'
+import type { ADComputer, Device, Ranked, Service, Summary } from '../types'
 import { ago, fmtDateTime, fmtInt, fmtPct, modeLabel } from '../lib/format'
 import { Button, ErrorNote, Field, Input, Modal, Segmented, Select, StatusBadge, Switch, Textarea, cx } from '../components/ui'
 import { RankList } from '../components/charts'
 import { RoamingTab } from './RoamingTab'
+import { useADInfo } from './ActiveDirectory'
 
 type Tab = 'summary' | 'rules' | 'isolate' | 'roaming'
 
@@ -128,6 +129,8 @@ function SummaryTab({ d, onForget }: { d: Device; onForget: () => void }) {
         ))}
       </dl>
 
+      <ADComputerCard host={d.hostname} />
+
       <div className="rounded-lg border border-line p-4">
         <p className="mb-3 text-xs font-semibold text-ink">Últimas 24 horas</p>
         <p className="mb-4 text-xs text-ink-2">
@@ -158,6 +161,46 @@ function SummaryTab({ d, onForget }: { d: Device; onForget: () => void }) {
         </Button>
       </div>
       <ErrorNote error={forget.error} />
+    </div>
+  )
+}
+
+/** Computador do AD com o mesmo nome do aparelho (PTR ou DHCP). */
+function ADComputerCard({ host }: { host?: string }) {
+  const adOn = !!useADInfo().data
+  const q = useQuery({
+    queryKey: ['ad-computer', host],
+    queryFn: () => api<{ computer: ADComputer | null }>(`/api/ad/computer${qs({ host })}`),
+    enabled: adOn && !!host,
+  })
+  if (!adOn || !host) return null
+  const c = q.data?.computer
+  return (
+    <div className="rounded-lg border border-line p-4 text-xs">
+      <p className="mb-2 font-semibold text-ink">Active Directory</p>
+      {q.isLoading ? (
+        <p className="text-muted">Procurando {host} no AD…</p>
+      ) : c ? (
+        <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
+          {(
+            [
+              ['Computador', c.name],
+              ['Sistema', [c.os, c.os_version].filter(Boolean).join(' ') || '—'],
+              ['OU', c.ou],
+              ['Situação no AD', c.enabled ? 'habilitado' : 'desabilitado'],
+              ['Último logon no domínio', c.last_logon ? ago(c.last_logon) : '—'],
+              ['Descrição', c.description || '—'],
+            ] as const
+          ).map(([k, v]) => (
+            <div key={k}>
+              <dt className="text-muted">{k}</dt>
+              <dd className="mt-0.5 break-all text-ink">{v}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <p className="text-muted">Nenhum computador do AD com o nome {host}: aparelho fora do domínio?</p>
+      )}
     </div>
   )
 }

@@ -134,6 +134,19 @@ var migrations = []string{
 		token        TEXT NOT NULL,
 		insecure_tls INTEGER NOT NULL DEFAULT 0
 	) WITHOUT ROWID;`,
+
+	`CREATE TABLE audit_log (
+		id      INTEGER PRIMARY KEY,
+		ts      INTEGER NOT NULL, -- Unix em ms
+		actor   TEXT NOT NULL,    -- painel (sessão) ou api (token)
+		ip      TEXT NOT NULL DEFAULT '',
+		action  TEXT NOT NULL,
+		target  TEXT NOT NULL DEFAULT '',
+		details TEXT NOT NULL DEFAULT '{}',
+		ok      INTEGER NOT NULL,
+		error   TEXT NOT NULL DEFAULT ''
+	);
+	CREATE INDEX audit_log_ts ON audit_log(ts);`,
 }
 
 type Store struct {

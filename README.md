@@ -80,7 +80,8 @@ Embutido no próprio binário, em `http://127.0.0.1:8053` por padrão. Tema escu
   - listas de bloqueio (adicionar, ativar/desativar, remover, sugestões de listas conhecidas);
   - regras próprias globais;
   - teste **"o que acontece com este domínio?"**, global ou por dispositivo, mostrando a regra que decide.
-- **Configurações:** tema, troca de senha, informações do servidor e sair.
+- **Active Directory** (opcional): usuários, grupos, DNS do AD e auditoria; veja abaixo.
+- **Configurações:** tema, troca de senha, verificação em duas etapas, informações do servidor e sair.
 
 **Primeiro acesso:**
 1. Ao abrir o painel sem senha definida, ele pede um **código de configuração** que o serviço imprime no log (`journalctl -u heimdalldns | grep codigo`). Assim, ninguém da rede define a senha antes do dono.
@@ -88,7 +89,9 @@ Embutido no próprio binário, em `http://127.0.0.1:8053` por padrão. Tema escu
 3. A sessão é um cookie `HttpOnly`/`SameSite=Strict`, válido por 7 dias, guardado no banco só como hash.
 4. As alterações exigem a mesma origem do painel, e as tentativas de senha têm limite por IP.
 
-Esqueceu a senha? `sudo heimdalldns passwd`.
+**Verificação em duas etapas (MFA):** em Configurações, leia o QR code num app autenticador (TOTP, RFC 6238) e confirme com um código. Daí em diante o login pede senha e código; um código não vale duas vezes. Desligar pelo painel pede senha e código. Obrigatória para alterar o Active Directory.
+
+Esqueceu a senha? `sudo heimdalldns passwd`. Perdeu o autenticador? `sudo heimdalldns mfa-off`.
 
 As listas e regras criadas pelo painel ficam no banco e se somam às do arquivo de configuração. As do arquivo aparecem no painel só para leitura.
 
@@ -177,6 +180,30 @@ heimdalldns console -listen 127.0.0.1:8070 -data-dir /var/lib/heimdalldns-consol
 - **Alertas de todos os clientes numa fila só**, os mais graves primeiro, com **reconhecer** repassado ao cliente.
 
 O console guarda o token da API de todos os clientes: rode-o numa rede de gerência (a VPN de cada cliente) e com HTTPS.
+
+### Active Directory (opcional)
+
+Gerencia o AD pelo painel: compatível principalmente com o **AD do Windows Server** e também com o **Samba AD** (testado contra um controlador Samba 4.25 de laboratório).
+
+- **Usuários:** busca, situação (ativo, desabilitado, bloqueado, privilegiado), último logon; criar, habilitar/desabilitar, desbloquear, redefinir senha (com "trocar no próximo logon") e excluir.
+- **Grupos:** membros de qualquer grupo; colocar e tirar usuários **só dos grupos liberados**.
+- **DNS do AD:** zonas integradas (DomainDnsZones, ForestDnsZones e as antigas em System) e seus registros; criar e apagar **A, AAAA, CNAME e PTR**, gravados direto nos objetos `dnsNode` do AD (o mesmo formato que o console DNS do Windows usa).
+- **Dispositivos:** a janela do aparelho mostra o computador do AD com o mesmo nome (sistema, OU, último logon no domínio).
+- **Auditoria:** toda alteração, aceita ou recusada, fica registrada (quem, de onde, o quê) e vai para o SIEM com a exportação ligada. Senhas nunca são registradas.
+
+**Travas, por padrão do mais seguro:**
+- começa **só leitura**; alterações exigem `ad.write: true` **e** MFA ligado no painel;
+- usuários só são alterados dentro das OUs de `ad.user_ous`; grupos só os de `ad.managed_groups`; DNS só nas zonas de `ad.dns_zones`;
+- contas e grupos privilegiados (Domain Admins, Enterprise Admins, Administrators, Schema Admins, operadores, `krbtgt`, contas com `adminCount=1`…) **nunca** são alterados, mesmo que estejam na lista;
+- a raiz da zona, os registros de serviço (`_ldap`, `_kerberos`…), `DomainDnsZones`/`ForestDnsZones` e os nomes dos controladores de domínio nunca são alterados; `_msdcs` é sempre só leitura;
+- conexão só por **LDAPS** (`ldaps://`, porta 636) ou StartTLS: senha não trafega aberta.
+
+**Preparando no Windows:**
+1. **Conta de serviço** dedicada (ex.: `svc-heimdall`), sem ser Domain Admin. Dê permissão só onde precisa, pelo *Delegation of Control Wizard* (Usuários e Computadores do AD → botão direito na OU → Delegar controle): "Criar, excluir e gerenciar contas de usuário", "Redefinir senhas" e "Modificar a associação de um grupo" na OU liberada. Para o DNS, adicione a conta ao grupo `DnsAdmins` ou dê permissão de escrita na zona (console DNS → Propriedades da zona → Segurança).
+2. **LDAPS:** o controlador precisa de um certificado de servidor (AD CS ou outro emissor); sem ele a porta 636 não responde. Aponte `ad.ca_file` para a CA que emitiu o certificado.
+3. **Tempo do DNS:** o serviço DNS do Windows relê o AD periodicamente; um registro novo pode levar alguns minutos para responder (no Samba é imediato).
+
+A senha da conta de serviço fica num arquivo à parte (`ad.bind_password_file`, permissão 600), nunca no YAML.
 
 ### API e linha de comando
 
@@ -291,6 +318,7 @@ internal/tlsconf    certificado do DoT/DoH: arquivo com recarga ou ACME
 internal/dhcp       servidor DHCPv4: concessões, reservas, DNS local
 internal/ha         alta disponibilidade: snapshot, long-poll e aplicação na réplica
 internal/console    console de MSP: leitura dos clientes e fila única de alertas
+internal/ad         Active Directory: LDAPS, usuários, grupos e DNS (dnsNode) com travas
 internal/api        API REST, login do painel e arquivos do painel
 internal/webui      painel compilado, embutido no binário (gerado por "make web")
 web/                código do painel: React + Vite + Tailwind + TanStack + Recharts

@@ -151,6 +151,30 @@ func (x *Exporter) Security(ev store.SecurityEvent, clientName, response string)
 	})
 }
 
+// Audit exporta uma operação administrativa (ex.: alteração no AD).
+func (x *Exporter) Audit(e store.AuditEntry) {
+	if !x.Enabled() {
+		return
+	}
+	sev := 5 // notice
+	if !e.OK {
+		sev = 4
+	}
+	x.send(sev, map[string]any{
+		"timestamp":  e.Time.UTC().Format(time.RFC3339Nano),
+		"app":        appName,
+		"event_type": "audit",
+		"event_id":   e.ID,
+		"operation":  e.Action,
+		"target":     e.Target,
+		"actor":      e.Actor,
+		"srcip":      e.IP,
+		"success":    e.OK,
+		"error":      e.Error,
+		"details":    e.Details,
+	})
+}
+
 // Query exporta uma consulta, conforme export.queries. Chamado em toda
 // consulta: descarta cedo o que não vai ser exportado.
 func (x *Exporter) Query(e server.Event) {

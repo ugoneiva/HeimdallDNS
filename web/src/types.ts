@@ -241,3 +241,61 @@ export type ConsoleAlert = {
   count: number
   last_seen: string
 }
+
+export type ADInfo = {
+  info: { base_dn: string; forest_dn: string; dns_host_name: string; domain: string; vendor: string; functional_level: number; write: boolean }
+  mfa: boolean
+  can_write: boolean
+  policy: { user_ous: string[]; managed_groups: string[]; dns_zones: string[] }
+}
+
+export type ADUser = {
+  dn: string
+  sam: string
+  upn?: string
+  display_name?: string
+  given_name?: string
+  surname?: string
+  mail?: string
+  title?: string
+  department?: string
+  description?: string
+  enabled: boolean
+  locked: boolean
+  privileged: boolean
+  manageable: boolean
+  last_logon?: string
+  pwd_last_set?: string
+  created?: string
+  groups: string[]
+}
+
+export type ADGroup = { dn: string; name: string; description?: string; members: number; privileged: boolean; managed: boolean }
+
+export type ADZone = { name: string; dn: string; location: string; editable: boolean }
+
+export type ADRecord = { name: string; type: string; ttl: number; data: string; static: boolean; protected: boolean }
+
+export type ADComputer = {
+  dn: string
+  name: string
+  dns_host_name?: string
+  os?: string
+  os_version?: string
+  description?: string
+  enabled: boolean
+  last_logon?: string
+  ou: string
+}
+
+export type AuditEntry = {
+  id: number
+  time: string
+  actor: string
+  ip?: string
+  action: string
+  target?: string
+  details?: Record<string, unknown>
+  ok: boolean
+  error?: string
+}

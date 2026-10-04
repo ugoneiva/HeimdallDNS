@@ -45,6 +45,10 @@ systemctl restart wazuh-manager
 | 112416 | 10 | domínio registrado há menos de 7 dias |
 | 112417 | 4 | dispositivo novo na rede |
 | 112420 | 14 | o HeimdallDNS isolou o dispositivo automaticamente |
+| 112430 | 3 | operação administrativa registrada na auditoria |
+| 112431 | 8 | alteração no Active Directory feita pelo HeimdallDNS (T1098) |
+| 112432 | 10 | AD: usuário criado/excluído ou senha redefinida (T1136.002, T1098) |
+| 112433 | 6 | alteração no AD recusada (travas, permissão ou política de senha) |
 
 
 ## Exemplo de evento

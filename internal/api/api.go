@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ugoneiva/HeimdallDNS/internal/ad"
 	"github.com/ugoneiva/HeimdallDNS/internal/cache"
 	"github.com/ugoneiva/HeimdallDNS/internal/clients"
 	"github.com/ugoneiva/HeimdallDNS/internal/console"
@@ -43,6 +44,8 @@ type Deps struct {
 	DHCP      *dhcp.Server // nil = DHCP desligado
 	HA        HA
 	Console   *console.Console // modo console (MSP): só as rotas do console
+	AD        *ad.Client       // nil = sem integração com o Active Directory
+	Audit     AuditExporter    // operações administrativas para o SIEM (opcional)
 	Encrypted Encrypted
 	UI        fs.FS // arquivos do painel; nil = sem painel
 	Secure    bool  // HTTPS: o cookie de sessão leva a marca Secure
@@ -101,6 +104,9 @@ func build(d Deps) (*api, http.Handler) {
 	api.HandleFunc("GET /api/clients/{ref}/mobileconfig", a.mobileconfig)
 	api.HandleFunc("GET /api/encrypted", a.encryptedInfo)
 	api.HandleFunc("GET /api/ha", a.haStatus)
+	if d.AD != nil {
+		a.adRoutes(api)
+	}
 	api.HandleFunc("GET /api/dhcp", a.dhcpState)
 	api.HandleFunc("POST /api/dhcp/reservations", a.dhcpReserve)
 	api.HandleFunc("DELETE /api/dhcp/reservations/{mac}", a.dhcpUnreserve)
@@ -349,4 +355,11 @@ func (a *api) consoleRoutes() http.Handler {
 		root.Handle("/", uiHandler(a.UI))
 	}
 	return root
+}
+
+// jsonDecode lê o corpo JSON recusando campos desconhecidos.
+func jsonDecode(r *http.Request, v any) error {
+	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, 1<<20))
+	dec.DisallowUnknownFields()
+	return dec.Decode(v)
 }

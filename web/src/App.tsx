@@ -1,6 +1,6 @@
 import { useEffect, useState, type ComponentType } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Gauge, ListFilter, Network, Radar as RadarIcon, ScrollText, Settings as SettingsIcon, ShieldAlert } from 'lucide-react'
+import { BookUser, Gauge, ListFilter, Network, Radar as RadarIcon, ScrollText, Settings as SettingsIcon, ShieldAlert } from 'lucide-react'
 import { api, authEvents } from './api'
 import type { AuthState } from './types'
 import { cx } from './components/ui'
@@ -15,8 +15,9 @@ import { Settings } from './pages/Settings'
 import { Security, useSecuritySummary } from './pages/Security'
 import { DHCP, useDHCP } from './pages/DHCP'
 import { ConsoleApp } from './pages/Console'
+import { ActiveDirectory, useADInfo } from './pages/ActiveDirectory'
 
-type Page = 'overview' | 'devices' | 'security' | 'queries' | 'lists' | 'dhcp' | 'settings'
+type Page = 'overview' | 'devices' | 'security' | 'queries' | 'lists' | 'dhcp' | 'ad' | 'settings'
 
 const nav: { page: Page; path: string; label: string; icon: ComponentType<{ className?: string }> }[] = [
   { page: 'overview', path: '', label: 'Visão geral', icon: Gauge },
@@ -25,6 +26,7 @@ const nav: { page: Page; path: string; label: string; icon: ComponentType<{ clas
   { page: 'queries', path: 'consultas', label: 'Consultas', icon: ScrollText },
   { page: 'lists', path: 'listas', label: 'Listas e regras', icon: ListFilter },
   { page: 'dhcp', path: 'dhcp', label: 'DHCP', icon: Network },
+  { page: 'ad', path: 'ad', label: 'Active Directory', icon: BookUser },
   { page: 'settings', path: 'configuracoes', label: 'Configurações', icon: SettingsIcon },
 ]
 
@@ -103,7 +105,8 @@ function Shell({ version, onLogout }: { version: string; onLogout: () => void })
   const openAlerts = sec.data?.open_total ?? 0
   const urgent = (sec.data?.open.critical ?? 0) + (sec.data?.open.high ?? 0) > 0
   const dhcpOn = useDHCP().data?.enabled ?? false
-  const items = nav.filter((n) => n.page !== 'dhcp' || dhcpOn)
+  const adOn = !!useADInfo().data
+  const items = nav.filter((n) => (n.page !== 'dhcp' || dhcpOn) && (n.page !== 'ad' || adOn))
 
   return (
     <div className="min-h-full lg:grid lg:grid-cols-[232px_1fr]">
@@ -160,6 +163,7 @@ function Shell({ version, onLogout }: { version: string; onLogout: () => void })
           {page === 'queries' && <QueryLog />}
           {page === 'lists' && <Lists />}
           {page === 'dhcp' && <DHCP onOpenDevice={(id) => go('devices', id)} />}
+          {page === 'ad' && <ActiveDirectory />}
           {page === 'settings' && <Settings onLogout={onLogout} />}
         </div>
       </main>

@@ -23,6 +23,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ugoneiva/HeimdallDNS/internal/ad"
 	"github.com/ugoneiva/HeimdallDNS/internal/api"
 	"github.com/ugoneiva/HeimdallDNS/internal/cache"
 	"github.com/ugoneiva/HeimdallDNS/internal/clients"
@@ -305,6 +306,14 @@ func runServer() error {
 	if err != nil {
 		return err
 	}
+	adClient, err := newAD(ctx, cfg, log.With("componente", "ad"))
+	if err != nil {
+		return err
+	}
+	var auditExp api.AuditExporter
+	if exp.Enabled() {
+		auditExp = exp
+	}
 
 	var httpSrv *http.Server
 	if cfg.API.Listen != "" {
@@ -322,7 +331,7 @@ func runServer() error {
 				Context: ctx, Token: token, Version: version, Started: started,
 				Server: srv, Cache: dnsCache, Upstream: ups, Filter: flt, Clients: reg,
 				Store: db, Log: qlog, Security: sec, NRD: nrdCheck, UI: webui.FS(), Secure: tls, DHCP: dhcpSrv,
-				HA: haDeps,
+				HA: haDeps, AD: adClient, Audit: auditExp,
 				Encrypted: api.Encrypted{
 					PublicHost: cfg.DNS.PublicHost, DoH: cfg.DNS.DoHListen != "", DoT: len(cfg.DNS.DoTListen) > 0,
 					DoHPort: portOf(cfg.DNS.DoHListen), DoTPort: portOf(firstOr(cfg.DNS.DoTListen)),
@@ -496,6 +505,31 @@ func runConsole(args []string) error {
 		return nil
 	}
 	return err
+}
+
+// newAD conecta ao Active Directory, se ligado. Uma falha de conexão não
+// impede o DNS de subir: só fica registrada (o DC pode estar fora do ar).
+func newAD(ctx context.Context, cfg *config.Config, log *slog.Logger) (*ad.Client, error) {
+	c := cfg.AD
+	if !c.Enabled {
+		return nil, nil
+	}
+	pw, err := os.ReadFile(c.BindPasswordFile)
+	if err != nil {
+		return nil, fmt.Errorf("ad.bind_password_file: %w", err)
+	}
+	client, err := ad.New(ad.Options{URL: c.URL, BaseDN: c.BaseDN, BindUser: c.BindUser,
+		BindPassword: strings.TrimRight(string(pw), "\r\n"), CAFile: c.CAFile, InsecureTLS: c.InsecureTLS,
+		Write: c.Write, UserOUs: c.UserOUs, ManagedGroups: c.ManagedGroups, DNSZones: c.DNSZones, Logger: log})
+	if err != nil {
+		return nil, err
+	}
+	if info, err := client.Check(ctx); err != nil {
+		log.Warn("Active Directory inacessível agora", "erro", err)
+	} else {
+		log.Info("Active Directory conectado", "dominio", info.Domain, "servidor", info.DNSHostName, "tipo", info.Vendor, "escrita", info.Write)
+	}
+	return client, nil
 }
 
 // newHA liga a alta disponibilidade: o principal publica o snapshot; a

@@ -112,4 +112,41 @@
     <group>active_response,</group>
   </rule>
 
+  <!-- Auditoria: operações administrativas (integração com o Active Directory) -->
+  <rule id="112430" level="3">
+    <if_sid>112400</if_sid>
+    <field name="event_type">^audit$</field>
+    <description>HeimdallDNS: operação administrativa $(operation) em $(target)</description>
+    <group>audit,</group>
+  </rule>
+
+  <rule id="112431" level="8">
+    <if_sid>112430</if_sid>
+    <field name="operation">^ad\.</field>
+    <field name="success">^true$</field>
+    <description>HeimdallDNS alterou o Active Directory: $(operation) em $(target) (por $(actor), $(srcip))</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+    <group>audit,account_changed,</group>
+  </rule>
+
+  <rule id="112432" level="10">
+    <if_sid>112431</if_sid>
+    <field name="operation">^ad\.user\.create$|^ad\.user\.delete$|^ad\.user\.password$</field>
+    <description>HeimdallDNS: conta do AD criada, excluída ou com senha trocada: $(target) (por $(actor), $(srcip))</description>
+    <mitre>
+      <id>T1136.002</id>
+      <id>T1098</id>
+    </mitre>
+    <group>audit,account_changed,</group>
+  </rule>
+
+  <rule id="112433" level="6">
+    <if_sid>112430</if_sid>
+    <field name="success">^false$</field>
+    <description>HeimdallDNS: operação no AD recusada: $(operation) em $(target): $(error)</description>
+    <group>audit,</group>
+  </rule>
+
 </group>

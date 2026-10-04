@@ -41,6 +41,7 @@ type Config struct {
 	Export       Export              `yaml:"export"`
 	DHCP         DHCP                `yaml:"dhcp"`
 	HA           HA                  `yaml:"ha"`
+	AD           AD                  `yaml:"ad"`
 	LocalRecords map[string][]string `yaml:"local_records"`
 	DataDir      string              `yaml:"data_dir"`
 	Log          Log                 `yaml:"log"`
@@ -149,6 +150,21 @@ type DHCP struct {
 	DNS        []string      `yaml:"dns"`    // vazio = esta máquina
 	Domain     string        `yaml:"domain"`
 	LeaseTime  time.Duration `yaml:"lease_time"`
+}
+
+// AD liga a integração com o Active Directory (Windows; Samba AD compatível).
+type AD struct {
+	Enabled          bool     `yaml:"enabled"`
+	URL              string   `yaml:"url"`                // ldaps://dc01.empresa.local
+	BaseDN           string   `yaml:"base_dn"`            // vazio = descoberto
+	BindUser         string   `yaml:"bind_user"`          // svc-heimdall@empresa.local
+	BindPasswordFile string   `yaml:"bind_password_file"` // a senha fica num arquivo, nunca aqui
+	CAFile           string   `yaml:"ca_file"`
+	InsecureTLS      bool     `yaml:"insecure_tls"`
+	Write            bool     `yaml:"write"` // libera alterações (exige MFA no painel)
+	UserOUs          []string `yaml:"user_ous"`
+	ManagedGroups    []string `yaml:"managed_groups"`
+	DNSZones         []string `yaml:"dns_zones"`
 }
 
 // HA liga a replicação entre nós: um principal e réplicas.
@@ -283,6 +299,14 @@ func (c *Config) Validate() error {
 			if a, err := netip.ParseAddr(v); err != nil || !a.Is4() {
 				errs = append(errs, fmt.Errorf("dhcp: range_start/range_end precisam ser IPv4 (%q)", v))
 			}
+		}
+	}
+	if c.AD.Enabled {
+		if c.AD.URL == "" || c.AD.BindUser == "" || c.AD.BindPasswordFile == "" {
+			errs = append(errs, errors.New("ad: informe url, bind_user e bind_password_file"))
+		}
+		if c.AD.Write && len(c.AD.UserOUs)+len(c.AD.ManagedGroups)+len(c.AD.DNSZones) == 0 {
+			errs = append(errs, errors.New("ad.write sem user_ous, managed_groups nem dns_zones não libera nada"))
 		}
 	}
 	switch c.HA.Role {
