@@ -14,6 +14,7 @@ import { Lists } from './pages/Lists'
 import { Settings } from './pages/Settings'
 import { Security, useSecuritySummary } from './pages/Security'
 import { DHCP, useDHCP } from './pages/DHCP'
+import { ConsoleApp } from './pages/Console'
 
 type Page = 'overview' | 'devices' | 'security' | 'queries' | 'lists' | 'dhcp' | 'settings'
 
@@ -72,6 +73,14 @@ export default function App() {
         onDone={() => qc.resetQueries()}
       />
     )
+  }
+  const logout = async () => {
+    await api('/api/auth/logout', { method: 'POST' }).catch(() => {})
+    qc.removeQueries({ predicate: (q) => q.queryKey[0] !== 'auth' })
+    await qc.resetQueries({ queryKey: ['auth'] })
+  }
+  if (auth.data.mode === 'console') {
+    return <ConsoleApp version={auth.data.version} onLogout={logout} />
   }
   return (
     <Shell

@@ -2,7 +2,7 @@
 
 Servidor DNS com filtro de bloqueio, no estilo do Pi-hole, escrito em Go, com funções mais avançadas: radar de dispositivos, isolamento por cliente e dashboard em tempo real.
 
-> **Estado:** em desenvolvimento. MVP completo (motor DNS, radar, histórico, log ao vivo, painel web), detecções de segurança com exportação para o Wazuh, DNS criptografado (DoT/DoH) para aparelhos dentro e fora da rede DHCP opcional e alta disponibilidade (principal e réplicas).
+> **Estado:** em desenvolvimento. MVP completo (motor DNS, radar, histórico, log ao vivo, painel web), detecções de segurança com exportação para o Wazuh, DNS criptografado (DoT/DoH) para aparelhos dentro e fora da rede DHCP opcional, alta disponibilidade (principal e réplicas) e console multi-tenant para MSP.
 
 ## O que já funciona
 
@@ -159,6 +159,25 @@ Dois (ou mais) HeimdallDNS: um **principal** e **réplicas**. Entregue todos com
 - **Principal fora do ar:** a réplica continua atendendo com a última configuração e volta a sincronizar sozinha. O painel mostra o estado dos dois lados.
 - **Segurança:** o snapshot inclui o hash da senha e os tokens dos aparelhos. Use um `sync_token` forte e HTTPS na API (ou uma rede de gerência).
 
+### Console de MSP (vários clientes)
+
+```sh
+heimdalldns console -listen 127.0.0.1:8070 -data-dir /var/lib/heimdalldns-console [-tls-cert … -tls-key …]
+```
+
+- **Painel próprio:** o mesmo binário, com login próprio. No primeiro acesso, o código de configuração sai no log, como no painel normal.
+- **Clientes:** cada cliente é um HeimdallDNS cadastrado pela URL da API e pelo token dele (`api.token`). O console testa a conexão antes de salvar.
+- **Leitura a cada 30 s**, com um cartão por cliente:
+  - no ar ou fora do ar (com o erro e o último contato);
+  - consultas e % bloqueado em 24 h;
+  - dispositivos ativos;
+  - alertas abertos por gravidade;
+  - upstreams sem resposta;
+  - versão, tempo ligado e papel na alta disponibilidade.
+- **Alertas de todos os clientes numa fila só**, os mais graves primeiro, com **reconhecer** repassado ao cliente.
+
+O console guarda o token da API de todos os clientes: rode-o numa rede de gerência (a VPN de cada cliente) e com HTTPS.
+
 ### API e linha de comando
 
 API REST em `127.0.0.1:8053`, com token. Por padrão o token é gerado em `<data_dir>/api.token`.
@@ -271,6 +290,7 @@ internal/dnsname    domínio registrável (Public Suffix List, só regras ICANN)
 internal/tlsconf    certificado do DoT/DoH: arquivo com recarga ou ACME
 internal/dhcp       servidor DHCPv4: concessões, reservas, DNS local
 internal/ha         alta disponibilidade: snapshot, long-poll e aplicação na réplica
+internal/console    console de MSP: leitura dos clientes e fila única de alertas
 internal/api        API REST, login do painel e arquivos do painel
 internal/webui      painel compilado, embutido no binário (gerado por "make web")
 web/                código do painel: React + Vite + Tailwind + TanStack + Recharts
@@ -288,4 +308,4 @@ O painel compilado vai no repositório, então `make build` (ou `go install`) fu
 
 ## Próximas etapas
 
-1. Console multi-tenant para MSP (várias instâncias num painel só).
+1. Pacotes de instalação (.deb, .rpm, AUR, imagem Docker) e versão 0.1.

@@ -172,7 +172,7 @@ function PasswordCard() {
   return <PasswordForm />
 }
 
-function PasswordForm() {
+export function PasswordForm() {
   const [current, setCurrent] = useState('')
   const [pw, setPw] = useState('')
   const [pw2, setPw2] = useState('')

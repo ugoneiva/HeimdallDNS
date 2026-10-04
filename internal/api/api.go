@@ -16,6 +16,7 @@ import (
 
 	"github.com/ugoneiva/HeimdallDNS/internal/cache"
 	"github.com/ugoneiva/HeimdallDNS/internal/clients"
+	"github.com/ugoneiva/HeimdallDNS/internal/console"
 	"github.com/ugoneiva/HeimdallDNS/internal/dhcp"
 	"github.com/ugoneiva/HeimdallDNS/internal/filter"
 	"github.com/ugoneiva/HeimdallDNS/internal/querylog"
@@ -41,6 +42,7 @@ type Deps struct {
 	NRD       NRDInfo      // idade dos domínios (nil = sem checagem)
 	DHCP      *dhcp.Server // nil = DHCP desligado
 	HA        HA
+	Console   *console.Console // modo console (MSP): só as rotas do console
 	Encrypted Encrypted
 	UI        fs.FS // arquivos do painel; nil = sem painel
 	Secure    bool  // HTTPS: o cookie de sessão leva a marca Secure
@@ -79,6 +81,10 @@ func build(d Deps) (*api, http.Handler) {
 			a.Logger.Warn("painel sem senha: abra o painel e informe este código para definir a senha",
 				"codigo", a.setupCode)
 		}
+	}
+
+	if d.Console != nil {
+		return a, a.consoleRoutes()
 	}
 
 	api := http.NewServeMux()
@@ -317,3 +323,24 @@ func historyStatus(l *querylog.Recorder) map[string]uint64 {
 
 // timeNow existe para os testes poderem trocar o relógio.
 var timeNow = time.Now
+
+// consoleRoutes monta o servidor no modo console: login, rotas do console e painel.
+func (a *api) consoleRoutes() http.Handler {
+	api := http.NewServeMux()
+	api.HandleFunc("GET /api/console/tenants", a.consoleTenants)
+	api.HandleFunc("POST /api/console/tenants", a.consoleAdd)
+	api.HandleFunc("DELETE /api/console/tenants/{id}", a.consoleRemove)
+	api.HandleFunc("GET /api/console/alerts", a.consoleAlerts)
+	api.HandleFunc("POST /api/console/tenants/{id}/ack/{event}", a.consoleAck)
+	api.HandleFunc("POST /api/auth/password", a.changePassword)
+	root := http.NewServeMux()
+	root.HandleFunc("GET /api/auth/state", a.authState)
+	root.HandleFunc("POST /api/auth/setup", a.setup)
+	root.HandleFunc("POST /api/auth/login", a.login)
+	root.HandleFunc("POST /api/auth/logout", a.logout)
+	root.Handle("/api/", a.requireAuth(api))
+	if a.UI != nil {
+		root.Handle("/", uiHandler(a.UI))
+	}
+	return root
+}

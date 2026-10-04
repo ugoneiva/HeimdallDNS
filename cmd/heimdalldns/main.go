@@ -27,6 +27,7 @@ import (
 	"github.com/ugoneiva/HeimdallDNS/internal/cache"
 	"github.com/ugoneiva/HeimdallDNS/internal/clients"
 	"github.com/ugoneiva/HeimdallDNS/internal/config"
+	"github.com/ugoneiva/HeimdallDNS/internal/console"
 	"github.com/ugoneiva/HeimdallDNS/internal/detect"
 	"github.com/ugoneiva/HeimdallDNS/internal/dhcp"
 	"github.com/ugoneiva/HeimdallDNS/internal/export"
@@ -48,9 +49,12 @@ const defaultConfig = "/etc/heimdalldns/heimdalldns.yaml"
 
 func main() {
 	var err error
-	if len(os.Args) > 1 && isCommand(os.Args[1]) {
+	switch {
+	case len(os.Args) > 1 && os.Args[1] == "console":
+		err = runConsole(os.Args[2:])
+	case len(os.Args) > 1 && isCommand(os.Args[1]):
 		err = runCLI(os.Args[1], os.Args[2:])
-	} else {
+	default:
 		err = runServer()
 	}
 	if err != nil {
@@ -437,6 +441,63 @@ func onQuery(qlog *querylog.Recorder, det *detect.Detector, exp *export.Exporter
 	}
 }
 
+// runConsole roda o console de MSP: acompanha vários HeimdallDNS pela API.
+func runConsole(args []string) error {
+	fs := flag.NewFlagSet("console", flag.ExitOnError)
+	listen := fs.String("listen", "127.0.0.1:8070", "endereço do console")
+	dataDir := fs.String("data-dir", "/var/lib/heimdalldns-console", "diretório de dados (guarda os tokens dos clientes)")
+	cert := fs.String("tls-cert", "", "certificado HTTPS")
+	key := fs.String("tls-key", "", "chave do certificado")
+	_ = fs.Parse(args)
+
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	slog.SetDefault(log)
+	if err := os.MkdirAll(*dataDir, 0o700); err != nil {
+		return err
+	}
+	db, err := store.Open(filepath.Join(*dataDir, "console.db"))
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	con, err := console.New(console.Options{Store: db, Logger: log})
+	if err != nil {
+		return err
+	}
+	go con.Run(ctx)
+	srv := &http.Server{
+		Handler: api.New(api.Deps{Context: ctx, Version: version, Started: time.Now(), Store: db, Console: con,
+			UI: webui.FS(), Secure: *cert != "", Logger: log}),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	ln, err := net.Listen("tcp", *listen)
+	if err != nil {
+		return err
+	}
+	go func() {
+		<-ctx.Done()
+		sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(sctx)
+	}()
+	scheme := "http"
+	if *cert != "" {
+		scheme = "https"
+	}
+	log.Info("console de MSP ouvindo", "endereco", scheme+"://"+ln.Addr().String())
+	if *cert != "" {
+		err = srv.ServeTLS(ln, *cert, *key)
+	} else {
+		err = srv.Serve(ln)
+	}
+	if errors.Is(err, http.ErrServerClosed) {
+		return nil
+	}
+	return err
+}
+
 // newHA liga a alta disponibilidade: o principal publica o snapshot; a
 // réplica o puxa e aplica (listas, regras, segurança, dispositivos, senha).
 func newHA(ctx context.Context, cfg *config.Config, db *store.Store, flt *filter.Manager, sec *security.Manager,
@@ -618,6 +679,7 @@ Comandos:
   forget  <ref>                     esquece o dispositivo
   services                          serviços para regras (service:tiktok, service:social…)
   passwd                            define uma nova senha do painel (recupera o acesso)
+  console [-listen] [-data-dir]     roda o console de MSP (vários HeimdallDNS num painel só)
 
 <ref> é o id, IP, MAC ou nome do dispositivo.
 

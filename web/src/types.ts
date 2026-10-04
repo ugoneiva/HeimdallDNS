@@ -113,7 +113,7 @@ export type Rules = {
 
 export type Service = { id: string; name: string; group: string; domains: string[] }
 
-export type AuthState = { setup_required: boolean; authenticated: boolean; version: string }
+export type AuthState = { setup_required: boolean; authenticated: boolean; version: string; mode?: 'dns' | 'console' }
 
 export type DomainTest = {
   name: string
@@ -203,4 +203,41 @@ export type HAStatus = {
   version?: string
   replicas?: { addr: string; last_seen: string; version: string }[]
   replica?: { primary_url: string; version: string; last_sync?: string; error?: string }
+}
+
+export type TenantState = {
+  id: string
+  name: string
+  url: string
+  insecure_tls: boolean
+  online: boolean
+  error?: string
+  last_ok?: string
+  checked?: string
+  version?: string
+  uptime_s: number
+  clients: number
+  rules: number
+  queries_24h: number
+  blocked_pct: number
+  active_devices: number
+  open_alerts: Partial<Record<'critical' | 'high' | 'medium' | 'low', number>>
+  open_total: number
+  upstreams_ok: number
+  upstreams: number
+  ha_role: string
+}
+
+export type ConsoleAlert = {
+  tenant_id: string
+  tenant_name: string
+  id: number
+  kind: string
+  severity: 'low' | 'medium' | 'high' | 'critical'
+  summary: string
+  client_name?: string
+  client_ip?: string
+  domain?: string
+  count: number
+  last_seen: string
 }

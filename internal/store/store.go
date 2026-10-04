@@ -126,6 +126,14 @@ var migrations = []string{
 		ip   TEXT NOT NULL UNIQUE,
 		name TEXT NOT NULL DEFAULT ''
 	) WITHOUT ROWID;`,
+
+	`CREATE TABLE console_tenants (
+		id           TEXT PRIMARY KEY,
+		name         TEXT NOT NULL,
+		url          TEXT NOT NULL,
+		token        TEXT NOT NULL,
+		insecure_tls INTEGER NOT NULL DEFAULT 0
+	) WITHOUT ROWID;`,
 }
 
 type Store struct {

@@ -178,6 +178,7 @@ func (a *api) authState(w http.ResponseWriter, r *http.Request) {
 		"setup_required": h == "",
 		"authenticated":  ok,
 		"version":        a.Version,
+		"mode":           map[bool]string{true: "console", false: "dns"}[a.Console != nil],
 	})
 }
 
