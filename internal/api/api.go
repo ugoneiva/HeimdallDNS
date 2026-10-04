@@ -15,7 +15,9 @@ import (
 	"github.com/ugoneiva/HeimdallDNS/internal/cache"
 	"github.com/ugoneiva/HeimdallDNS/internal/clients"
 	"github.com/ugoneiva/HeimdallDNS/internal/filter"
+	"github.com/ugoneiva/HeimdallDNS/internal/querylog"
 	"github.com/ugoneiva/HeimdallDNS/internal/server"
+	"github.com/ugoneiva/HeimdallDNS/internal/store"
 	"github.com/ugoneiva/HeimdallDNS/internal/upstream"
 )
 
@@ -29,6 +31,8 @@ type Deps struct {
 	Upstream *upstream.Group
 	Filter   *filter.Manager
 	Clients  *clients.Registry
+	Store    *store.Store
+	Log      *querylog.Recorder
 	Logger   *slog.Logger
 }
 
@@ -53,12 +57,25 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/services", a.services)
 	mux.HandleFunc("GET /api/lists", a.lists)
 	mux.HandleFunc("POST /api/lists/refresh", a.refreshLists)
+	mux.HandleFunc("GET /api/queries", a.queries)
+	mux.HandleFunc("GET /api/queries/live", a.liveQueries)
+	mux.HandleFunc("GET /api/stats/summary", a.summary)
+	mux.HandleFunc("GET /api/stats/timeseries", a.timeseries)
+	mux.HandleFunc("GET /api/stats/top", a.top)
+	mux.HandleFunc("GET /api/stats/realtime", a.realtime)
+	mux.HandleFunc("GET /api/stats/live", a.liveStats)
 	return a.auth(mux)
 }
 
 func (a *api) auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		// O EventSource do navegador não manda cabeçalhos: nas rotas ao vivo
+		// o token pode vir na URL.
+		if !ok && r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/live") {
+			tok = r.URL.Query().Get("token")
+			ok = tok != ""
+		}
 		if !ok || a.Token == "" || subtle.ConstantTimeCompare([]byte(tok), []byte(a.Token)) != 1 {
 			writeErr(w, http.StatusUnauthorized, errors.New("token ausente ou inválido"))
 			return
@@ -77,6 +94,7 @@ func (a *api) status(w http.ResponseWriter, _ *http.Request) {
 		"upstreams": a.Upstream.Stats(),
 		"rules":     map[string]int{"block": block, "allow": allow},
 		"clients":   len(a.Clients.List()),
+		"history":   historyStatus(a.Log),
 	})
 }
 
@@ -230,4 +248,12 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 
 func writeErr(w http.ResponseWriter, code int, err error) {
 	writeJSON(w, code, map[string]string{"error": err.Error()})
+}
+
+func historyStatus(l *querylog.Recorder) map[string]uint64 {
+	if l == nil {
+		return nil
+	}
+	ev, rows := l.Dropped()
+	return map[string]uint64{"dropped_events": ev, "dropped_rows": rows}
 }

@@ -26,6 +26,7 @@ import (
 	"github.com/ugoneiva/HeimdallDNS/internal/clients"
 	"github.com/ugoneiva/HeimdallDNS/internal/config"
 	"github.com/ugoneiva/HeimdallDNS/internal/filter"
+	"github.com/ugoneiva/HeimdallDNS/internal/querylog"
 	"github.com/ugoneiva/HeimdallDNS/internal/server"
 	"github.com/ugoneiva/HeimdallDNS/internal/store"
 	"github.com/ugoneiva/HeimdallDNS/internal/upstream"
@@ -156,6 +157,15 @@ func runServer() error {
 		reg.SetVendors(oui)
 	}()
 
+	qlog := querylog.New(querylog.Options{
+		Sink:           db,
+		StoreQueries:   cfg.History.StoreQueries,
+		Retention:      cfg.History.Retention,
+		StatsRetention: cfg.History.StatsRetention,
+		Logger:         log.With("componente", "historico"),
+	})
+	go qlog.Run(ctx)
+
 	allowed, _ := cfg.AllowedPrefixes()
 	local, _ := cfg.LocalAddrs()
 	dnsCache := cache.New(cache.Options{
@@ -176,7 +186,7 @@ func runServer() error {
 		Clients:      reg,
 		Timeout:      cfg.Upstream.Timeout + time.Second,
 		Logger:       log.With("componente", "dns"),
-		OnQuery:      queryLogger(log, cfg.Log.Queries),
+		OnQuery:      onQuery(qlog, log, cfg.Log.Queries),
 	})
 	if err := srv.Start(); err != nil {
 		return err
@@ -196,6 +206,7 @@ func runServer() error {
 			Handler: api.New(api.Deps{
 				Context: ctx, Token: token, Version: version, Started: started,
 				Server: srv, Cache: dnsCache, Upstream: ups, Filter: flt, Clients: reg,
+				Store: db, Log: qlog,
 				Logger: log.With("componente", "api"),
 			}),
 			ReadHeaderTimeout: 10 * time.Second,
@@ -224,7 +235,8 @@ func runServer() error {
 			}
 			srv.Shutdown(sctx)
 			cancel()
-			<-regDone // grava os clientes
+			<-regDone     // grava os clientes
+			<-qlog.Done() // grava o histórico pendente
 			c := srv.Counters()
 			log.Info("consultas atendidas", "total", c.Total, "bloqueadas", c.Blocked, "isoladas", c.Isolated, "cache", c.Cached)
 			return nil
@@ -281,11 +293,13 @@ func apiToken(cfg *config.Config) (string, error) {
 	return t, nil
 }
 
-func queryLogger(log *slog.Logger, enabled bool) func(server.Event) {
-	if !enabled {
-		return nil
+// onQuery manda cada consulta para o histórico e, se pedido, para o log.
+func onQuery(qlog *querylog.Recorder, log *slog.Logger, logQueries bool) func(server.Event) {
+	if !logQueries {
+		return qlog.Record
 	}
 	return func(e server.Event) {
+		qlog.Record(e)
 		log.Info("consulta", "cliente", e.Client, "nome_cliente", e.Display, "nome", e.Name, "tipo", e.Type,
 			"status", e.Status, "rcode", e.Rcode, "regra", e.Rule, "upstream", e.Upstream,
 			"tempo", e.Duration.Round(time.Microsecond))

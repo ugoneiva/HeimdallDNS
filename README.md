@@ -2,7 +2,7 @@
 
 Servidor DNS com filtro de bloqueio, no estilo do Pi-hole, escrito em Go, com funções mais avançadas: radar de dispositivos, isolamento por cliente e dashboard em tempo real.
 
-> **Estado:** em desenvolvimento. O motor DNS e o radar de dispositivos estão prontos; o histórico, o log ao vivo e o dashboard vêm a seguir.
+> **Estado:** em desenvolvimento. O motor DNS, o radar de dispositivos, o histórico e o log ao vivo estão prontos; o dashboard vem a seguir.
 
 ## O que já funciona
 
@@ -42,6 +42,21 @@ Servidor DNS com filtro de bloqueio, no estilo do Pi-hole, escrito em Go, com fu
   - catálogo de serviços: `service:tiktok`, `service:youtube`, ou grupos como `service:social`, `service:streaming`, `service:mensagens`, `service:jogos`.
 - **Persistência:** tudo fica em SQLite (Go puro, sem CGO) e sobrevive a reinícios.
 
+### Histórico e tempo real
+
+- **Gravação sem travar o DNS:**
+  - cada consulta vai para um agregador por um canal sem bloqueio;
+  - as linhas são gravadas no SQLite em lote, uma vez por segundo;
+  - se o disco não acompanhar, só as linhas detalhadas são descartadas (e contadas em `/api/status`); os resumos nunca perdem contagem.
+- **Resumos:**
+  - por minuto e por dispositivo (total, encaminhadas, cache, bloqueadas, isoladas, erros, latência);
+  - domínios mais consultados e mais bloqueados por hora.
+  - Os gráficos leem os resumos e respondem em milissegundos mesmo com milhões de consultas.
+- **Retenção separada:** as consultas detalhadas ficam 7 dias, os resumos 90 dias; a limpeza roda de hora em hora.
+- **Tempo real (SSE):**
+  - log ao vivo com filtros por dispositivo, status, tipo e texto, que descarta o excedente para um navegador lento em vez de atrasar o DNS;
+  - tráfego segundo a segundo.
+
 ### API e linha de comando
 
 API REST em `127.0.0.1:8053`, com token. Por padrão o token é gerado em `<data_dir>/api.token`.
@@ -67,6 +82,14 @@ heimdalldns status
 | `DELETE /api/clients/{ref}` | esquece o dispositivo |
 | `GET /api/services` | catálogo de serviços |
 | `GET /api/lists` · `POST /api/lists/refresh` | listas de bloqueio |
+| `GET /api/queries` | histórico: `range`/`from`/`to`, `client`, `status`, `type`, `q`, `limit`, `before` (paginação) |
+| `GET /api/queries/live` | **SSE** do log ao vivo, com os mesmos filtros (evento `query`; `dropped` se o navegador não acompanhar) |
+| `GET /api/stats/summary` | totais do período, % bloqueado, % cache, latência média, dispositivos ativos |
+| `GET /api/stats/timeseries` | série para os gráficos (`step` automático: 1 min a 1 dia) |
+| `GET /api/stats/top` | `kind=domains`, `blocked` ou `clients` |
+| `GET /api/stats/realtime` · `GET /api/stats/live` | tráfego por segundo (JSON e **SSE**, evento `tick`) |
+
+No filtro `status`, `blocked` inclui os isolados, `allowed` junta encaminhadas, cache e locais, e `cached` inclui as respostas vencidas servidas. O `range` aceita `30m`, `24h`, `7d` etc. Nas rotas `/live`, o token também pode ir na URL (`?token=`), porque o `EventSource` do navegador não envia cabeçalhos.
 
 ## Desempenho medido
 
@@ -78,6 +101,11 @@ Num notebook de 20 núcleos:
 | Carga das listas StevenBlack + HaGeZi Pro (~300 mil regras) | 109 ms |
 | Memória com essas listas e o radar | ~60 MB |
 | Consultas servidas do cache, com o radar ligado | ~200 mil/s, 0 falhas (log de consultas desligado) |
+| Idem, gravando **cada consulta** no histórico (1 milhão em 6,7 s) | ~149 mil/s, 0 consultas perdidas |
+| Resumo e rankings com 1,2 milhão de consultas no banco | ~5 ms |
+| Busca por texto no histórico detalhado (1,2 milhão de linhas) | ~0,5 s |
+| Espaço em disco do histórico detalhado | ~120 bytes por consulta |
+| Primeira consulta depois de ligar | ~20 ms (as conexões DoH/DoT já abrem no início) |
 | Resposta do cache / bloqueio | ~35 µs |
 
 ## Uso rápido
@@ -121,13 +149,13 @@ internal/filter     leitura das listas, regras e atualização
 internal/cache      cache LRU com TTL, negativo e serve-stale
 internal/upstream   DoH/DoT/DoQ, escolha do melhor e saúde
 internal/clients    radar: descoberta, MAC/fabricante, PTR, isolamento e regras
-internal/store      SQLite (clientes; depois o histórico)
+internal/querylog   agregador, resumos, log ao vivo e tráfego por segundo
+internal/store      SQLite: clientes, consultas, resumos, retenção
 internal/api        API REST com token
 deploy/             unit do systemd
 ```
 
 ## Próximas etapas
 
-1. **Histórico:** SQLite com gravação em lote e resumos por minuto.
-2. **Log ao vivo (SSE)** e rotas de estatísticas para os gráficos.
-3. **Dashboard:** React + Vite + Tailwind + shadcn/ui, embutido no binário.
+1. **Dashboard:** React + Vite + Tailwind + shadcn/ui, embutido no binário, com login.
+2. Recursos de segurança: feeds de ameaças, domínios recém-registrados, detecção de DGA e túnel DNS, exportação para o Wazuh.

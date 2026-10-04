@@ -10,6 +10,7 @@ import (
 	"math"
 	"net/netip"
 	"slices"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -191,8 +192,9 @@ func (g *Group) parallel(ctx context.Context, req *dns.Msg) (*dns.Msg, string, e
 	return nil, "", errors.Join(errs...)
 }
 
-// byLatency ordena: saudáveis primeiro; entre eles, quem ainda não foi medido
-// (para ganhar uma medida) e depois a menor latência.
+// byLatency ordena: saudáveis primeiro; entre eles, a menor latência medida.
+// Quem ainda não foi medido vai para o fim: a medição é papel do HealthCheck,
+// não das consultas dos clientes.
 func (g *Group) byLatency() []*member {
 	out := slices.Clone(g.members)
 	slices.SortStableFunc(out, func(a, b *member) int {
@@ -204,6 +206,12 @@ func (g *Group) byLatency() []*member {
 			return 1
 		}
 		la, lb := a.latencyNS(), b.latencyNS()
+		if (la == 0) != (lb == 0) {
+			if la == 0 {
+				return 1
+			}
+			return -1
+		}
 		switch {
 		case la < lb:
 			return -1
@@ -221,15 +229,21 @@ func (g *Group) HealthCheck(ctx context.Context, every time.Duration) {
 	if every <= 0 {
 		return
 	}
+	// Mede todos em paralelo (também abre as conexões DoH/DoT antes da
+	// primeira consulta de um cliente).
 	probe := func() {
+		var wg sync.WaitGroup
 		for _, m := range g.members {
-			req := new(dns.Msg)
-			req.SetQuestion("example.com.", dns.TypeA)
-			req.RecursionDesired = true
-			if _, err := g.exchange(ctx, m, req); err != nil && ctx.Err() == nil {
-				g.log.Warn("upstream sem resposta", "upstream", m.addr, "erro", err)
-			}
+			wg.Go(func() {
+				req := new(dns.Msg)
+				req.SetQuestion("example.com.", dns.TypeA)
+				req.RecursionDesired = true
+				if _, err := g.exchange(ctx, m, req); err != nil && ctx.Err() == nil {
+					g.log.Warn("upstream sem resposta", "upstream", m.addr, "erro", err)
+				}
+			})
 		}
+		wg.Wait()
 	}
 	probe()
 	t := time.NewTicker(every)

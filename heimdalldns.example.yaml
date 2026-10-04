@@ -58,6 +58,12 @@ api:
   listen: 127.0.0.1:8053    # "" desliga
   token: ""                 # vazio = gerado em <data_dir>/api.token
 
+# Histórico de consultas.
+history:
+  store_queries: true      # grava cada consulta (os resumos por minuto/hora são sempre gravados)
+  retention: 168h          # consultas detalhadas: 7 dias (~120 bytes por consulta)
+  stats_retention: 2160h   # resumos para os gráficos: 90 dias
+
 # Respostas locais (A/AAAA), por exemplo para equipamentos da rede.
 local_records:
   # nas.casa: ["192.168.0.10"]

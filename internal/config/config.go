@@ -36,6 +36,7 @@ type Config struct {
 	Filter       Filter              `yaml:"filter"`
 	Clients      Clients             `yaml:"clients"`
 	API          API                 `yaml:"api"`
+	History      History             `yaml:"history"`
 	LocalRecords map[string][]string `yaml:"local_records"`
 	DataDir      string              `yaml:"data_dir"`
 	Log          Log                 `yaml:"log"`
@@ -97,6 +98,12 @@ type API struct {
 	Token string `yaml:"token"`
 }
 
+type History struct {
+	StoreQueries   bool          `yaml:"store_queries"`   // grava cada consulta (os resumos são sempre gravados)
+	Retention      time.Duration `yaml:"retention"`       // das consultas detalhadas
+	StatsRetention time.Duration `yaml:"stats_retention"` // dos resumos por minuto/hora
+}
+
 type Log struct {
 	Level   string `yaml:"level"`   // debug, info, warn, error
 	Queries bool   `yaml:"queries"` // registra cada consulta no log
@@ -146,7 +153,12 @@ func Default() *Config {
 			NeighborInterval: time.Minute,
 			VendorDBMaxAge:   30 * 24 * time.Hour,
 		},
-		API:     API{Listen: "127.0.0.1:8053"},
+		API: API{Listen: "127.0.0.1:8053"},
+		History: History{
+			StoreQueries:   true,
+			Retention:      7 * 24 * time.Hour,
+			StatsRetention: 90 * 24 * time.Hour,
+		},
 		DataDir: "/var/lib/heimdalldns",
 		Log:     Log{Level: "info"},
 	}
@@ -182,6 +194,9 @@ func (c *Config) Validate() error {
 	case BlockNull, BlockNXDomain, BlockRefused, BlockDrop:
 	default:
 		errs = append(errs, fmt.Errorf("clients.isolate_mode %q: use null, nxdomain, refused ou drop", c.Clients.IsolateMode))
+	}
+	if c.History.Retention <= 0 || c.History.StatsRetention <= 0 {
+		errs = append(errs, errors.New("history.retention e history.stats_retention devem ser positivos"))
 	}
 	if _, err := c.AllowedPrefixes(); err != nil {
 		errs = append(errs, err)

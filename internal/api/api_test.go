@@ -1,15 +1,21 @@
 package api
 
 import (
+	"bufio"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ugoneiva/HeimdallDNS/internal/clients"
+	"github.com/ugoneiva/HeimdallDNS/internal/querylog"
+	"github.com/ugoneiva/HeimdallDNS/internal/server"
+	"github.com/ugoneiva/HeimdallDNS/internal/store"
 )
 
 func setup(t *testing.T) (*httptest.Server, *clients.Registry) {
@@ -91,6 +97,171 @@ func TestErrors(t *testing.T) {
 		resp, out := call(t, ts, c.method, c.path, "segredo", c.body)
 		if resp.StatusCode != c.code || out["error"] == nil {
 			t.Errorf("%s %s: %d %v", c.method, c.path, resp.StatusCode, out)
+		}
+	}
+}
+
+// clientID é o id do dispositivo "Celular" criado em setupHistory.
+var clientID string
+
+func setupHistory(t *testing.T) (*httptest.Server, *querylog.Recorder, *store.Store) {
+	t.Helper()
+	reg, _ := clients.NewRegistry(clients.Options{})
+	st, err := store.Open(filepath.Join(t.TempDir(), "h.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := querylog.New(querylog.Options{Sink: st, StoreQueries: true, Retention: time.Hour, StatsRetention: time.Hour})
+	ctx, cancel := context.WithCancel(context.Background())
+	go rec.Run(ctx)
+	ts := httptest.NewServer(New(Deps{Context: ctx, Token: "segredo", Clients: reg, Store: st, Log: rec}))
+	t.Cleanup(func() {
+		ts.CloseClientConnections()
+		ts.Close()
+		cancel()
+		<-rec.Done()
+		st.Close()
+	})
+	c := reg.Observe(netip.MustParseAddr("192.168.0.7"), time.Now())
+	reg.Update(c, func(s *clients.Settings) error { s.Name = "Celular"; return nil })
+	clientID = c.ID()
+	return ts, rec, st
+}
+
+func evt(name, status string) server.Event {
+	return server.Event{Time: time.Now(), Client: netip.MustParseAddr("192.168.0.7"), ClientID: clientID, Name: name + ".",
+		Type: "A", Status: status, Rcode: "NOERROR", Duration: time.Millisecond}
+}
+
+func TestLiveSSE(t *testing.T) {
+	ts, rec, _ := setupHistory(t)
+	resp, err := http.Get(ts.URL + "/api/queries/live?token=segredo&status=blocked")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if ct := resp.Header.Get("Content-Type"); resp.StatusCode != 200 || ct != "text/event-stream" {
+		t.Fatalf("%d %s", resp.StatusCode, ct)
+	}
+	// Dá tempo de a assinatura existir antes de publicar.
+	time.Sleep(100 * time.Millisecond)
+	rec.Record(evt("permitido.com", server.StatusForwarded))
+	rec.Record(evt("ads.com", server.StatusBlocked))
+
+	lines := make(chan string)
+	go func() {
+		sc := bufio.NewScanner(resp.Body)
+		for sc.Scan() {
+			lines <- sc.Text()
+		}
+		close(lines)
+	}()
+	timeout := time.After(3 * time.Second)
+	for {
+		select {
+		case l := <-lines:
+			if !strings.HasPrefix(l, "data: ") {
+				continue
+			}
+			var e querylog.Entry
+			json.Unmarshal([]byte(strings.TrimPrefix(l, "data: ")), &e)
+			if e.Name != "ads.com" || e.Status != "blocked" {
+				t.Fatalf("o filtro deixou passar: %+v", e)
+			}
+			return
+		case <-timeout:
+			t.Fatal("evento SSE não chegou")
+		}
+	}
+}
+
+func TestLiveRequiresToken(t *testing.T) {
+	ts, _, _ := setupHistory(t)
+	resp, err := http.Get(ts.URL + "/api/queries/live?token=errado")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("token errado no SSE: %d", resp.StatusCode)
+	}
+	// Token na URL só vale nas rotas ao vivo.
+	if resp, _ := call(t, ts, "GET", "/api/clients?token=segredo", "", ""); resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("token na URL fora do /live: %d", resp.StatusCode)
+	}
+}
+
+func TestHistoryRoutes(t *testing.T) {
+	ts, rec, st := setupHistory(t)
+	for range 3 {
+		rec.Record(evt("netflix.com", server.StatusForwarded))
+	}
+	rec.Record(evt("ads.com", server.StatusBlocked))
+	// Espera o lote ser gravado.
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		rows, _ := st.History(store.HistoryQuery{From: time.Now().Add(-time.Hour), To: time.Now().Add(time.Hour), Limit: 10})
+		if len(rows) == 4 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("histórico não gravou: %d", len(rows))
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	get := func(path string, v any) {
+		t.Helper()
+		req, _ := http.NewRequest("GET", ts.URL+path, nil)
+		req.Header.Set("Authorization", "Bearer segredo")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("%s: %d", path, resp.StatusCode)
+		}
+		json.NewDecoder(resp.Body).Decode(v)
+	}
+
+	var q struct {
+		Queries []querylog.Entry `json:"queries"`
+	}
+	get("/api/queries?range=1h&client=Celular&status=blocked", &q)
+	if len(q.Queries) != 1 || q.Queries[0].Name != "ads.com" || q.Queries[0].ClientName != "Celular" {
+		t.Errorf("queries = %+v", q.Queries)
+	}
+	var sum struct {
+		Counts     querylog.Counts `json:"counts"`
+		BlockedPct float64         `json:"blocked_pct"`
+	}
+	get("/api/stats/summary?range=1h", &sum)
+	if sum.Counts.Total != 4 || sum.BlockedPct != 25 {
+		t.Errorf("summary = %+v", sum)
+	}
+	var top []struct {
+		Key   string `json:"key"`
+		Count int64  `json:"count"`
+	}
+	get("/api/stats/top?kind=domains&range=1d", &top)
+	if len(top) != 1 || top[0].Key != "netflix.com" || top[0].Count != 3 {
+		t.Errorf("top = %+v", top)
+	}
+	var tsr struct {
+		Step   int `json:"step_s"`
+		Points []struct {
+			Total int64 `json:"total"`
+		} `json:"points"`
+	}
+	get("/api/stats/timeseries?range=1h", &tsr)
+	if tsr.Step != 60 || len(tsr.Points) < 60 {
+		t.Errorf("timeseries: step %d, %d pontos", tsr.Step, len(tsr.Points))
+	}
+
+	for _, bad := range []string{"/api/stats/summary?range=xyz", "/api/stats/top?kind=nada", "/api/stats/timeseries?range=30d&step=1m"} {
+		if resp, _ := call(t, ts, "GET", bad, "segredo", ""); resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("%s: %d", bad, resp.StatusCode)
 		}
 	}
 }

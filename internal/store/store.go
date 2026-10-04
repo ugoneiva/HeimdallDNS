@@ -29,6 +29,45 @@ var migrations = []string{
 		settings   TEXT NOT NULL DEFAULT '{}'
 	);
 	CREATE INDEX clients_mac ON clients(mac) WHERE mac != '';`,
+
+	`CREATE TABLE queries (
+		id          INTEGER PRIMARY KEY,
+		ts          INTEGER NOT NULL, -- Unix em ms
+		client_ip   TEXT NOT NULL,
+		client_id   TEXT NOT NULL DEFAULT '',
+		name        TEXT NOT NULL,
+		qtype       TEXT NOT NULL,
+		status      TEXT NOT NULL,
+		rcode       TEXT NOT NULL,
+		rule        TEXT NOT NULL DEFAULT '',
+		upstream    TEXT NOT NULL DEFAULT '',
+		duration_us INTEGER NOT NULL
+	);
+	CREATE INDEX queries_ts ON queries(ts);
+	CREATE INDEX queries_client_ts ON queries(client_id, ts);
+
+	CREATE TABLE stats_minute (
+		minute     INTEGER NOT NULL, -- Unix / 60
+		client_id  TEXT NOT NULL,
+		total      INTEGER NOT NULL DEFAULT 0,
+		forwarded  INTEGER NOT NULL DEFAULT 0,
+		cached     INTEGER NOT NULL DEFAULT 0,
+		blocked    INTEGER NOT NULL DEFAULT 0,
+		isolated   INTEGER NOT NULL DEFAULT 0,
+		local      INTEGER NOT NULL DEFAULT 0,
+		refused    INTEGER NOT NULL DEFAULT 0,
+		errors     INTEGER NOT NULL DEFAULT 0,
+		forward_us INTEGER NOT NULL DEFAULT 0,
+		PRIMARY KEY (minute, client_id)
+	) WITHOUT ROWID;
+
+	CREATE TABLE top_domains_hour (
+		hour    INTEGER NOT NULL, -- Unix / 3600
+		blocked INTEGER NOT NULL,
+		name    TEXT NOT NULL,
+		count   INTEGER NOT NULL,
+		PRIMARY KEY (hour, blocked, name)
+	) WITHOUT ROWID;`,
 }
 
 type Store struct {
@@ -36,12 +75,14 @@ type Store struct {
 }
 
 func Open(path string) (*Store, error) {
-	dsn := "file:" + path + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(1)"
+	// _txlock=immediate: transações de escrita pegam o lock no início, evitando
+	// SQLITE_BUSY quando duas conexões tentam escrever ao mesmo tempo.
+	dsn := "file:" + path + "?_txlock=immediate&_pragma=journal_mode(WAL)&_pragma=busy_timeout(10000)&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(1)"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(1) // SQLite aceita um escritor por vez; evita SQLITE_BUSY
+	db.SetMaxOpenConns(4) // WAL: leituras em paralelo com a escrita
 	s := &Store{db: db}
 	if err := s.migrate(); err != nil {
 		db.Close()
