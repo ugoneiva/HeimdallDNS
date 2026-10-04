@@ -11,6 +11,7 @@ import { Logo } from '../components/Logo'
 import { UpstreamPicker, useUpstream } from './DNS'
 import { PiholeImport } from './Maintenance'
 import { listSuggestions } from './Lists'
+import { GuardianScene } from '../components/art'
 import { t } from '../lib/i18n'
 
 const steps = [t('Boas-vindas'), t('Saída do DNS'), t('Bloqueios'), 'Pi-hole', t('Rede'), t('Pronto')]
@@ -93,6 +94,7 @@ export function Wizard({ onClose }: { onClose: () => void }) {
 function Welcome() {
   return (
     <div className="space-y-3 text-sm text-ink-2">
+      <GuardianScene className="mb-2 w-full rounded-xl" />
       <h2 className="text-base font-semibold text-ink">{t('Bem-vindo ao HeimdallDNS')}</h2>
       <p>
         {t('Ele vira o DNS da sua rede: responde os aparelhos, bloqueia anúncios, rastreadores e ameaças, e mostra quem está acessando o quê.')}

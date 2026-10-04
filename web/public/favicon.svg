@@ -1,1 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#0a0e14"/><path d="M16 4 6 8v7c0 6.2 4.2 11.3 10 13 5.8-1.7 10-6.8 10-13V8z" fill="none" stroke="#22d3ee" stroke-width="2.2" stroke-linejoin="round"/><circle cx="16" cy="15" r="3.2" fill="#22d3ee"/><path d="M10.5 15a5.5 5.5 0 0 1 11 0" fill="none" stroke="#22d3ee" stroke-width="1.6" stroke-linecap="round" opacity=".6"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- HeimdallDNS: escudo do guardião com a Bifröst, o olho e a runa Algiz -->
+  <defs>
+    <linearGradient id="b" x1="0" x2="1"><stop offset="0" stop-color="#f2545b"/><stop offset=".2" stop-color="#f59e3b"/><stop offset=".4" stop-color="#f2d14b"/><stop offset=".6" stop-color="#4cc38a"/><stop offset=".8" stop-color="#22d3ee"/><stop offset="1" stop-color="#7c6cf0"/></linearGradient>
+  </defs>
+  <path d="M32 4 9.5 12.2V30c0 14.6 9.4 24.6 22.5 29.6C45.1 54.6 54.5 44.6 54.5 30V12.2z" fill="#0f1d2b" stroke="#22d3ee" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M18 28a14 14 0 0 1 28 0" fill="none" stroke="url(#b)" stroke-width="3.6" stroke-linecap="round"/>
+  <path d="M20.5 38c3.2-4.6 7-6.9 11.5-6.9s8.3 2.3 11.5 6.9c-3.2 4.6-7 6.9-11.5 6.9s-8.3-2.3-11.5-6.9z" fill="#0a0e14" stroke="#22d3ee" stroke-width="2.4"/>
+  <circle cx="32" cy="38" r="3.8" fill="#22d3ee"/>
+  <path d="M32 55.5V48.5m0 3-3.8-4.2M32 51.5l3.8-4.2" fill="none" stroke="#22d3ee" stroke-width="2.4" stroke-linecap="round"/>
+</svg>

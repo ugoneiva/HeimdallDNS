@@ -3,7 +3,9 @@
 
 import { useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { Activity, Server, ShieldAlert } from 'lucide-react'
+import { Activity, MessagesSquare, Radar as RadarIcon, Server, ShieldBan, ShieldCheck, Timer, Zap } from 'lucide-react'
+import type { ComponentType } from 'react'
+import { HornIcon } from '../components/art'
 import { api, qs } from '../api'
 import type { Ranked, Second, Status, Summary, Timeseries } from '../types'
 import { useSSE } from '../lib/sse'
@@ -70,10 +72,14 @@ function LiveTraffic() {
   )
 }
 
-function Stat({ label, value, note }: { label: string; value: string; note?: string }) {
+function Stat({ label, value, note, icon: Icon }: { label: string; value: string; note?: string; icon?: ComponentType<{ className?: string }> }) {
   return (
-    <div className="rounded-xl border border-line bg-surface px-4 py-3.5">
-      <p className="text-xs text-muted">{label}</p>
+    <div className="relative overflow-hidden rounded-xl border border-line bg-surface px-4 py-3.5">
+      {Icon && <Icon className="absolute -right-2 -bottom-3 size-16 text-accent opacity-[0.07]" aria-hidden />}
+      <p className="flex items-center gap-1.5 text-xs text-muted">
+        {Icon && <Icon className="size-3.5 text-accent" aria-hidden />}
+        {label}
+      </p>
       <p className="mt-1 text-2xl font-semibold tracking-tight text-ink">{value}</p>
       {note && <p className="mt-0.5 text-[11px] text-muted">{note}</p>}
     </div>
@@ -135,7 +141,11 @@ function SecurityStrip({ onOpen }: { onOpen: () => void }) {
         total ? 'border-critical/40 bg-critical-soft' : 'border-line bg-surface',
       )}
     >
-      <ShieldAlert className={cx('size-5', total ? 'text-critical-ink' : 'text-good')} aria-hidden />
+      {total ? (
+        <HornIcon sounding className="size-6 text-critical-ink" aria-hidden />
+      ) : (
+        <ShieldCheck className="size-6 text-good" aria-hidden />
+      )}
       <span className="text-sm font-medium text-ink">
         {total ? total > 1 ? t('{n} alertas de segurança em aberto', { n: fmtInt(total) }) : t('1 alerta de segurança em aberto') : t('Nenhum alerta de segurança em aberto')}
       </span>
@@ -177,15 +187,16 @@ export function Overview({ onOpenDevice, onOpenSecurity }: { onOpenDevice: (id: 
 
       <div className={cx('space-y-5 transition-opacity', refetching && 'opacity-60')}>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-          <Stat label={t('Consultas')} value={fmtCompact(s?.counts.total ?? 0)} />
+          <Stat icon={MessagesSquare} label={t('Consultas')} value={fmtCompact(s?.counts.total ?? 0)} />
           <Stat
+            icon={ShieldBan}
             label={t('Bloqueadas')}
             value={fmtPct(s?.blocked_pct ?? 0)}
             note={t('{n} consultas', { n: fmtInt((s?.counts.blocked ?? 0) + (s?.counts.isolated ?? 0)) })}
           />
-          <Stat label={t('Respondidas do cache')} value={fmtPct(s?.cached_pct ?? 0)} note={t('{n} consultas', { n: fmtInt(s?.counts.cached ?? 0) })} />
-          <Stat label={t('Latência média do upstream')} value={fmtMs(s?.avg_forward_ms ?? 0)} />
-          <Stat label={t('Dispositivos ativos')} value={fmtInt(s?.active_clients ?? 0)} />
+          <Stat icon={Zap} label={t('Respondidas do cache')} value={fmtPct(s?.cached_pct ?? 0)} note={t('{n} consultas', { n: fmtInt(s?.counts.cached ?? 0) })} />
+          <Stat icon={Timer} label={t('Latência média do upstream')} value={fmtMs(s?.avg_forward_ms ?? 0)} />
+          <Stat icon={RadarIcon} label={t('Dispositivos ativos')} value={fmtInt(s?.active_clients ?? 0)} />
         </div>
 
         <Card title={t('Consultas no período')} subtitle={ts.data ? t('Cada barra soma {passo}', { passo: stepLabel(ts.data.step_s) }) : undefined}>

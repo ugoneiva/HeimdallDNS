@@ -12,6 +12,7 @@ import { fmtClock, fmtDateTime, fmtInt, fmtMs, isBlockedStatus, statusLabel } fr
 import { Button, Card, ErrorNote, Input, Segmented, Select, StatusBadge, cx } from '../components/ui'
 import { useDevices } from './Devices'
 import { rangeOptions, type Range } from './Overview'
+import { EmptyArt } from '../components/art'
 import { t } from '../lib/i18n'
 
 const MAX_ROWS = 5000
@@ -244,7 +245,10 @@ function QueryTable({ rows, live, empty, onEnd }: {
         </div>
         <div ref={parent} className="h-[calc(100vh-330px)] min-h-80 overflow-y-auto">
           {rows.length === 0 ? (
-            <p className="py-16 text-center text-sm text-muted">{empty}</p>
+            <div className="flex flex-col items-center gap-2 py-14 text-sm text-muted">
+              <EmptyArt kind="scroll" className="h-20" />
+              <p>{empty}</p>
+            </div>
           ) : (
             <div style={{ height: v.getTotalSize(), position: 'relative' }}>
               {items.map((it) => {

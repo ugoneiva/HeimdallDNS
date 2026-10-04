@@ -8,6 +8,7 @@ import { api, qs } from '../api'
 import type { SecurityEvent, SecuritySettings, SecuritySummary } from '../types'
 import { ago, fmtDateTime, fmtInt, kindLabel, severityLabel } from '../lib/format'
 import { Button, Card, ErrorNote, Field, Input, Modal, Segmented, Select, Switch, Textarea, cx } from '../components/ui'
+import { EmptyArt } from '../components/art'
 import { t } from '../lib/i18n'
 
 export function useSecuritySummary() {
@@ -138,10 +139,14 @@ export function Security({ onOpenDevice }: { onOpenDevice: (id: string) => void 
       <Card pad={false}>
         <ErrorNote error={events.error || setEv.error || ignore.error || isolate.error} />
         {list.length === 0 ? (
-          <p className="flex items-center justify-center gap-2 py-12 text-sm text-muted">
-            <ShieldCheck className="size-4 text-good" aria-hidden />
-            {events.isLoading ? t('Carregando…') : status === 'open' ? t('Nenhum alerta aberto.') : t('Nenhum alerta no período.')}
-          </p>
+          <div className="flex flex-col items-center gap-2 py-10 text-sm text-muted">
+            {!events.isLoading && <EmptyArt kind="calm" className="h-24" />}
+            <p className="flex items-center gap-2">
+              <ShieldCheck className="size-4 text-good" aria-hidden />
+              {events.isLoading ? t('Carregando…') : status === 'open' ? t('Nenhum alerta aberto.') : t('Nenhum alerta no período.')}
+            </p>
+            {!events.isLoading && status === 'open' && <p className="text-xs">{t('O Gjallarhorn está em silêncio: a rede está tranquila.')}</p>}
+          </div>
         ) : (
           <ul className="divide-y divide-line">
             {list.map((e) => (

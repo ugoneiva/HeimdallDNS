@@ -222,7 +222,15 @@ function MapCanvas({ width, devices, dests, links, upstreams, hover, setHover, o
     <div className="relative" style={{ width, height }} onMouseLeave={() => setHover(null)}>
       <svg width={width} height={height} className="absolute inset-0" aria-hidden>
         {/* servidor ↔ internet */}
-        <path d={`M${hub.x},${hub.y - 30} L${internet.x},${internet.y + 26}`} className="stroke-line-strong" strokeWidth={2} fill="none" />
+        <defs>
+          {/* Em coordenadas absolutas: preso ao contorno, um degradê numa linha vertical (largura 0) não aparece. */}
+          <linearGradient id="bifrost-map" gradientUnits="userSpaceOnUse" x1={hub.x} y1={internet.y + 58} x2={hub.x} y2={hub.y - 32}>
+            {['#7c6cf0', '#22d3ee', '#4cc38a', '#f2d14b', '#f59e3b', '#f2545b'].map((c, i) => (
+              <stop key={c} offset={`${i * 20}%`} stopColor={c} />
+            ))}
+          </linearGradient>
+        </defs>
+        <path d={`M${hub.x},${hub.y - 32} L${internet.x},${internet.y + 58}`} stroke="url(#bifrost-map)" strokeWidth={5} strokeLinecap="round" opacity={0.75} fill="none" />
         {!hover &&
           devices.map((d) => {
             const p = devPos.get(d.id)!
@@ -280,6 +288,7 @@ function MapCanvas({ width, devices, dests, links, upstreams, hover, setHover, o
         <span className="mt-1 text-[11px] whitespace-nowrap text-ink-2">
           {t('Internet')} · {t('{n} de {total} upstreams respondendo', { n: healthy, total: upstreams.length })}
         </span>
+        <span className="mt-0.5 text-[10px] tracking-widest text-muted uppercase">{t('pela Bifröst (DNS cifrado)')}</span>
       </div>
 
       {/* O próprio HeimdallDNS */}

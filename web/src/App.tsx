@@ -3,12 +3,13 @@
 
 import { useEffect, useState, type ComponentType } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { BookUser, Gauge, Globe, Waypoints, ListFilter, Network, Radar as RadarIcon, ScrollText, Settings as SettingsIcon, ShieldAlert } from 'lucide-react'
+import { BookUser, Gauge, Globe, Waypoints, ListFilter, Network, Radar as RadarIcon, ScrollText, Settings as SettingsIcon } from 'lucide-react'
 import { api, authEvents } from './api'
 import type { AuthState } from './types'
 import { cx } from './components/ui'
 import { Logo } from './components/Logo'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { HornIcon, RuneBand } from './components/art'
 import { AboutLine } from './components/About'
 import { HABanner } from './components/HABanner'
 import { Login } from './pages/Login'
@@ -34,7 +35,7 @@ const nav: { page: Page; path: string; label: string; icon: ComponentType<{ clas
   { page: 'overview', path: '', label: t('Visão geral'), icon: Gauge },
   { page: 'devices', path: 'dispositivos', label: t('Dispositivos'), icon: RadarIcon },
   { page: 'map', path: 'mapa', label: t('Mapa da rede'), icon: Waypoints },
-  { page: 'security', path: 'seguranca', label: t('Segurança'), icon: ShieldAlert },
+  { page: 'security', path: 'seguranca', label: t('Segurança'), icon: HornIcon },
   { page: 'queries', path: 'consultas', label: t('Consultas'), icon: ScrollText },
   { page: 'lists', path: 'listas', label: t('Listas e regras'), icon: ListFilter },
   { page: 'dns', path: 'dns', label: t('DNS'), icon: Globe },
@@ -126,13 +127,14 @@ function Shell({ version, onLogout }: { version: string; onLogout: () => void })
   return (
     <div className="min-h-full lg:grid lg:grid-cols-[232px_1fr]">
       <aside className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur lg:h-screen lg:border-r lg:border-b-0">
-        <div className="flex items-center gap-2.5 px-4 py-3 lg:px-5 lg:py-5">
-          <Logo className="size-7" />
+        <div className="flex items-center gap-2.5 px-4 py-3 lg:px-5 lg:pt-5 lg:pb-2">
+          <Logo className="size-8 lg:size-10" />
           <div className="leading-tight">
-            <p className="text-sm font-semibold text-ink">{t('HeimdallDNS')}</p>
+            <p className="text-sm font-semibold tracking-wide text-ink">{t('HeimdallDNS')}</p>
             <p className="text-[11px] text-muted">{t('guardião da sua rede')}</p>
           </div>
         </div>
+        <RuneBand text="HEIMDALL · BIFROST" className="mb-3 hidden h-3 w-40 px-5 text-accent opacity-40 lg:block" />
         <nav aria-label={t('Seções')} className="flex gap-1 overflow-x-auto px-2 pb-2 lg:flex-col lg:px-3 lg:pb-0">
           {items.map((n) => {
             const Icon = n.icon
@@ -147,7 +149,7 @@ function Shell({ version, onLogout }: { version: string; onLogout: () => void })
                   active ? 'bg-accent-soft font-medium text-accent' : 'text-ink-2 hover:bg-surface-2 hover:text-ink',
                 )}
               >
-                <Icon className="size-4" />
+                <Icon className={cx('size-4', n.page === 'security' && urgent && 'text-critical')} />
                 {n.label}
                 {n.page === 'security' && openAlerts > 0 && (
                   <span
@@ -171,7 +173,7 @@ function Shell({ version, onLogout }: { version: string; onLogout: () => void })
         <div className="bg-grid pointer-events-none absolute inset-x-0 top-0 h-64" aria-hidden />
         <div className="relative mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
           <HABanner />
-          <h1 className="mb-5 text-xl font-semibold tracking-tight text-ink">{current.label}</h1>
+          <PageHeader page={page} icon={current.icon} label={current.label} />
           <ReadOnlyNote page={page} />
           <ErrorBoundary resetKey={page}>
           {page === 'overview' && <Overview onOpenDevice={(id) => go('devices', id)} onOpenSecurity={() => go('security')} />}
@@ -225,6 +227,34 @@ function EnrollMFA({ onLogout }: { onLogout: () => void }) {
         <button className="text-xs text-muted hover:text-ink" onClick={onLogout}>
           {t('Sair')}
         </button>
+      </div>
+    </div>
+  )
+}
+
+// Subtítulos das páginas: dizem para que serve cada tela.
+const subtitles: Partial<Record<Page, string>> = {
+  overview: t('O que o guardião vê agora'),
+  devices: t('Quem está na sua rede, e quem pode atravessar'),
+  map: t('Com quem cada aparelho fala'),
+  security: t('O Gjallarhorn soa quando há perigo'),
+  queries: t('Cada pergunta feita ao DNS, ao vivo'),
+  lists: t('O que não atravessa a ponte'),
+  dns: t('A saída pela Bifröst e os nomes da sua rede'),
+  dhcp: t('Endereços entregues aos aparelhos'),
+  ad: t('Usuários, grupos e DNS do domínio'),
+  settings: t('Contas, backup e preferências'),
+}
+
+function PageHeader({ page, icon: Icon, label }: { page: Page; icon: ComponentType<{ className?: string }>; label: string }) {
+  return (
+    <div className="mb-5 flex items-center gap-3">
+      <span className="grid size-10 place-items-center rounded-xl border border-accent/30 bg-gradient-to-br from-accent-soft to-transparent text-accent shadow-[0_0_24px_-8px_var(--accent)]">
+        <Icon className="size-5" />
+      </span>
+      <div>
+        <h1 className="text-xl font-semibold tracking-tight text-ink">{label}</h1>
+        {subtitles[page] && <p className="text-xs text-muted">{subtitles[page]}</p>}
       </div>
     </div>
   )

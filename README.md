@@ -59,6 +59,12 @@ Servidor DNS com filtro de bloqueio, no estilo do Pi-hole, escrito em Go, com fu
 
 ### Painel web
 
+A identidade visual vem do mito: Heimdall é o guardião nórdico que vigia a **Bifröst**, a ponte arco-íris entre os mundos. Ele vê e ouve tudo e toca o **Gjallarhorn** quando o perigo se aproxima.
+- **Emblema:** escudo com a Bifröst, o olho do guardião e a runa Algiz (ᛉ, proteção).
+- **Alertas:** são o chifre, que "soa" quando há alerta aberto.
+- **No mapa da rede:** a saída para a internet é a própria Bifröst.
+- **Arte:** toda em SVG, feita para o projeto, sem imagens externas.
+
 Embutido no próprio binário, em `http://127.0.0.1:8053` por padrão. Tema escuro (padrão) e claro.
 
 - **Visão geral:**

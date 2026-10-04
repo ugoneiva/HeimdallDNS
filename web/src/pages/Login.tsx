@@ -8,6 +8,7 @@ import { api, ApiError } from '../api'
 import { Button, ErrorNote, Field, Input } from '../components/ui'
 import { Logo } from '../components/Logo'
 import { LangPicker } from '../components/LangPicker'
+import { GuardianScene, RuneBand } from '../components/art'
 import { t } from '../lib/i18n'
 
 export function Login({ setup, adLogin, onDone }: { setup: boolean; adLogin?: boolean; onDone: () => void }) {
@@ -37,8 +38,9 @@ export function Login({ setup, adLogin, onDone }: { setup: boolean; adLogin?: bo
     <div className="relative grid min-h-full place-items-center px-4 py-10">
       <div className="bg-grid pointer-events-none absolute inset-0" aria-hidden />
       <div className="relative w-full max-w-sm">
+        <GuardianScene className="mb-5 w-full rounded-2xl shadow-2xl ring-1 ring-white/5" />
         <div className="mb-6 flex flex-col items-center gap-3 text-center">
-          <Logo className="size-12" />
+          <Logo className="size-14" />
           <div>
             <h1 className="text-xl font-semibold text-ink">{t('HeimdallDNS')}</h1>
             <p className="mt-1 text-sm text-ink-2">{setup ? t('Primeiro acesso: crie a conta de administrador') : t('Entre para continuar')}</p>
@@ -111,6 +113,7 @@ export function Login({ setup, adLogin, onDone }: { setup: boolean; adLogin?: bo
         <div className="mt-4 flex justify-center">
           <LangPicker />
         </div>
+        <RuneBand text="HEIMDALL · BIFROST · GALLARHORN" className="mx-auto mt-5 h-3 w-72 text-accent opacity-30" />
       </div>
     </div>
   )

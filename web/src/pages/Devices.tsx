@@ -12,6 +12,7 @@ import { useCan } from '../lib/auth'
 import { Radar } from '../components/Radar'
 import { DeviceModal } from './DeviceModal'
 import { GroupsCard } from './Groups'
+import { EmptyArt } from '../components/art'
 import { locale, t } from '../lib/i18n'
 
 type Filter = 'all' | 'active' | 'isolated' | 'rules'
@@ -186,10 +187,13 @@ export function Devices({ openId, onOpen }: { openId: string | null; onOpen: (id
             </tbody>
           </table>
           {!isLoading && rows.length === 0 && (
-            <p className="flex items-center justify-center gap-2 py-10 text-sm text-muted">
-              <ShieldBan className="size-4" aria-hidden />
-              {data.length ? t('Nenhum dispositivo com esse filtro.') : t('Nenhum dispositivo consultou o DNS ainda.')}
-            </p>
+            <div className="flex flex-col items-center gap-2 py-10 text-sm text-muted">
+              <EmptyArt kind="radar" className="h-20" />
+              <p className="flex items-center gap-2">
+                <ShieldBan className="size-4" aria-hidden />
+                {data.length ? t('Nenhum dispositivo com esse filtro.') : t('Nenhum dispositivo consultou o DNS ainda.')}
+              </p>
+            </div>
           )}
         </div>
       </Card>
