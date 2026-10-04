@@ -27,6 +27,7 @@ import (
 	"github.com/ugoneiva/HeimdallDNS/internal/clients"
 	"github.com/ugoneiva/HeimdallDNS/internal/config"
 	"github.com/ugoneiva/HeimdallDNS/internal/detect"
+	"github.com/ugoneiva/HeimdallDNS/internal/dhcp"
 	"github.com/ugoneiva/HeimdallDNS/internal/export"
 	"github.com/ugoneiva/HeimdallDNS/internal/filter"
 	"github.com/ugoneiva/HeimdallDNS/internal/nrd"
@@ -241,6 +242,16 @@ func runServer() error {
 	})
 	go qlog.Run(ctx)
 
+	dhcpSrv, err := newDHCP(cfg, db, reg, log.With("componente", "dhcp"))
+	if err != nil {
+		return err
+	}
+	if dhcpSrv != nil {
+		if err := dhcpSrv.Start(ctx); err != nil {
+			return fmt.Errorf("%w (a porta 67 exige root ou CAP_NET_BIND_SERVICE e CAP_NET_RAW)", err)
+		}
+	}
+
 	tlsCfg, err := tlsconf.New(tlsconf.Options{
 		CertFile: cfg.DNS.TLSCert, KeyFile: cfg.DNS.TLSKey,
 		ACME: cfg.DNS.ACME, Email: cfg.DNS.ACMEEmail, CacheDir: filepath.Join(cfg.DataDir, "acme"),
@@ -269,6 +280,8 @@ func runServer() error {
 		Upstream:     ups,
 		Clients:      reg,
 		NRD:          nrdCheck,
+		LocalLookup:  dhcpLookup(dhcpSrv),
+		LocalPTR:     dhcpPTR(dhcpSrv),
 		TLS:          tlsCfg,
 		PublicHost:   cfg.DNS.PublicHost,
 		DoTListen:    cfg.DNS.DoTListen,
@@ -297,7 +310,7 @@ func runServer() error {
 			Handler: api.New(api.Deps{
 				Context: ctx, Token: token, Version: version, Started: started,
 				Server: srv, Cache: dnsCache, Upstream: ups, Filter: flt, Clients: reg,
-				Store: db, Log: qlog, Security: sec, NRD: nrdCheck, UI: webui.FS(), Secure: tls,
+				Store: db, Log: qlog, Security: sec, NRD: nrdCheck, UI: webui.FS(), Secure: tls, DHCP: dhcpSrv,
 				Encrypted: api.Encrypted{
 					PublicHost: cfg.DNS.PublicHost, DoH: cfg.DNS.DoHListen != "", DoT: len(cfg.DNS.DoTListen) > 0,
 					DoHPort: portOf(cfg.DNS.DoHListen), DoTPort: portOf(firstOr(cfg.DNS.DoTListen)),
@@ -414,6 +427,71 @@ func onQuery(qlog *querylog.Recorder, det *detect.Detector, exp *export.Exporter
 			"status", e.Status, "rcode", e.Rcode, "regra", e.Rule, "upstream", e.Upstream,
 			"tempo", e.Duration.Round(time.Microsecond))
 	}
+}
+
+// newDHCP monta o servidor DHCP se estiver ligado (nil, nil se não).
+func newDHCP(cfg *config.Config, db *store.Store, reg *clients.Registry, log *slog.Logger) (*dhcp.Server, error) {
+	c := cfg.DHCP
+	if !c.Enabled {
+		return nil, nil
+	}
+	serverIP, subnet, err := dhcp.InterfaceAddr(c.Interface)
+	if err != nil {
+		return nil, err
+	}
+	if c.Subnet != "" {
+		if subnet, err = netip.ParsePrefix(c.Subnet); err != nil {
+			return nil, fmt.Errorf("dhcp.subnet: %w", err)
+		}
+		subnet = subnet.Masked()
+	}
+	start, _ := netip.ParseAddr(c.RangeStart)
+	end, _ := netip.ParseAddr(c.RangeEnd)
+	parse := func(list []string, field string) ([]netip.Addr, error) {
+		var out []netip.Addr
+		for _, v := range list {
+			a, err := netip.ParseAddr(strings.TrimSpace(v))
+			if err != nil || !a.Is4() {
+				return nil, fmt.Errorf("dhcp.%s: %q inválido", field, v)
+			}
+			out = append(out, a)
+		}
+		return out, nil
+	}
+	routers, err := parse(c.Router, "router")
+	if err != nil {
+		return nil, err
+	}
+	if len(routers) == 0 {
+		if gw, err := clients.DefaultGateway(); err == nil && subnet.Contains(gw) {
+			routers = []netip.Addr{gw}
+		}
+	}
+	dnsServers, err := parse(c.DNS, "dns")
+	if err != nil {
+		return nil, err
+	}
+	log.Warn("DHCP ligado: confirme que o DHCP do roteador está desligado, ou os dois vão brigar",
+		"interface", c.Interface)
+	return dhcp.New(dhcp.Options{
+		Interface: c.Interface, Start: start, End: end, Subnet: subnet, ServerIP: serverIP,
+		Routers: routers, DNS: dnsServers, Domain: c.Domain, LeaseTime: c.LeaseTime, Store: db, Logger: log,
+		OnLease: func(l dhcp.Lease) { reg.LearnLease(l.IP, l.MAC, l.Hostname) },
+	})
+}
+
+func dhcpLookup(s *dhcp.Server) func(string) []netip.Addr {
+	if s == nil {
+		return nil
+	}
+	return s.Lookup
+}
+
+func dhcpPTR(s *dhcp.Server) func(netip.Addr) string {
+	if s == nil {
+		return nil
+	}
+	return s.PTR
 }
 
 func portOf(addr string) string {

@@ -6,6 +6,7 @@ import type { Status } from '../types'
 import { setTheme, useTheme } from '../lib/theme'
 import { fmtInt, fmtPct, uptime } from '../lib/format'
 import { Button, Card, ErrorNote, Field, Input, Segmented } from '../components/ui'
+import { useDHCP } from './DHCP'
 
 export function Settings({ onLogout }: { onLogout: () => void }) {
   const { choice } = useTheme()
@@ -54,6 +55,8 @@ export function Settings({ onLogout }: { onLogout: () => void }) {
         )}
       </Card>
 
+      <DHCPCard />
+
       <PasswordCard />
 
       <Card title="Sessão">
@@ -65,6 +68,26 @@ export function Settings({ onLogout }: { onLogout: () => void }) {
         </Button>
       </Card>
     </div>
+  )
+}
+
+function DHCPCard() {
+  const { data } = useDHCP()
+  if (!data || data.enabled) return null
+  return (
+    <Card title="DHCP" subtitle="Desligado">
+      <p className="mb-3 text-xs leading-relaxed text-ink-2">
+        Com o DHCP do HeimdallDNS, cada aparelho recebe este servidor como DNS automaticamente, o radar aprende nome e MAC direto da
+        concessão, e os nomes resolvem como <code className="font-mono text-ink">notebook-da-ana.lan</code>. Desligue o DHCP do roteador
+        antes: dois servidores DHCP na mesma rede brigam.
+      </p>
+      <pre className="overflow-x-auto rounded-lg bg-surface-2 p-3 font-mono text-[11px] text-ink">{`dhcp:
+  enabled: true
+  interface: eth0
+  range_start: 192.168.1.100
+  range_end: 192.168.1.200
+  domain: lan`}</pre>
+    </Card>
   )
 }
 

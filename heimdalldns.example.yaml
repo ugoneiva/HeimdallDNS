@@ -96,6 +96,21 @@ export:
   syslog: ""                # ex.: udp://10.0.0.5:514
   queries: none             # além dos alertas: none, blocked ou all
 
+# Servidor DHCPv4 opcional. DESLIGUE O DHCP DO ROTEADOR ANTES: dois servidores
+# DHCP na mesma rede brigam. Com ele, os aparelhos recebem este servidor como
+# DNS, o radar aprende MAC e nome direto da concessão e os nomes resolvem como
+# <nome>.<domínio> (com reverso). Reservas (IP fixo por MAC) pelo painel.
+dhcp:
+  enabled: false
+  interface: ""             # ex.: eth0
+  range_start: ""           # ex.: 192.168.1.100
+  range_end: ""             # ex.: 192.168.1.200
+  subnet: ""                # vazio = a da interface
+  router: []                # vazio = o gateway padrão desta máquina
+  dns: []                   # vazio = esta máquina
+  domain: lan
+  lease_time: 24h
+
 # Histórico de consultas.
 history:
   store_queries: true      # grava cada consulta (os resumos por minuto/hora são sempre gravados)

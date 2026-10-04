@@ -167,3 +167,33 @@ export type DeviceAccess = {
   doh_url?: string
   dot_host?: string
 }
+
+export type DHCPLease = {
+  ip: string
+  mac: string
+  hostname?: string
+  expires: string
+  active: boolean
+  reserved: boolean
+  client_id?: string
+  client_name?: string
+}
+
+export type DHCPReservation = { mac: string; ip: string; name?: string }
+
+export type DHCPState = {
+  enabled: boolean
+  config?: {
+    interface: string
+    range_start: string
+    range_end: string
+    subnet: string
+    server_ip: string
+    routers: string[] | null
+    dns: string[]
+    domain: string
+    lease_time: string
+  }
+  leases?: DHCPLease[]
+  reservations?: DHCPReservation[]
+}

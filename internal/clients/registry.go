@@ -762,6 +762,66 @@ func (r *Registry) confirmNew(c *Client, ip netip.Addr) {
 	}
 }
 
+// LearnLease usa uma concessão DHCP: o IP passa a ser do aparelho com aquele
+// MAC, que ganha o nome informado pelo próprio aparelho. Aparelho que ainda
+// não consultou o DNS também entra no radar (DNS fixo em outro servidor é um
+// jeito de escapar do filtro: ele aparece com zero consultas).
+func (r *Registry) LearnLease(ip netip.Addr, mac, hostname string) {
+	mac = normMAC(mac)
+	if mac == "" || !ip.IsValid() {
+		return
+	}
+	r.neighMu.Lock()
+	if r.neighbors == nil {
+		r.neighbors = map[netip.Addr]string{}
+	}
+	r.neighbors[ip] = mac
+	r.neighMu.Unlock()
+
+	created := false
+	r.mu.Lock()
+	if owner := r.byMAC[mac]; owner != nil && r.byIP[ip] == nil {
+		// Aparelho conhecido com IP novo que ainda não consultou o DNS.
+		owner.mu.Lock()
+		owner.addIPLocked(ip)
+		owner.markDirty()
+		owner.mu.Unlock()
+		r.byIP[ip] = owner
+	}
+	if r.byIP[ip] == nil && r.byMAC[mac] == nil {
+		c := &Client{id: r.newIDLocked(), mac: mac, ips: []netip.Addr{ip}, firstSeen: time.Now()}
+		c.vendor = r.vendors.Load().Lookup(mac)
+		c.rebuildLocked(r.opts.IsolateMode)
+		c.markDirty()
+		r.byID[c.id], r.byIP[ip], r.byMAC[mac] = c, c, c
+		created = true
+	}
+	r.mu.Unlock()
+	if !created {
+		r.applyNeighbor(ip) // IP novo de aparelho conhecido, ou MAC descoberto
+	}
+	c := r.lookupIP(ip)
+	if c == nil {
+		return
+	}
+	if hostname != "" {
+		c.mu.Lock()
+		if c.hostname != hostname {
+			c.hostname = hostname
+			c.ptrAt = time.Now() // o nome do DHCP vale mais que o PTR do roteador
+			c.markDirty()
+			c.rebuildLocked(r.opts.IsolateMode)
+		}
+		c.mu.Unlock()
+	}
+	if created {
+		r.log.Info("novo dispositivo pelo DHCP", "id", c.id, "ip", ip, "mac", mac, "nome", hostname)
+		if r.opts.OnNew != nil {
+			r.opts.OnNew(c.id, ip)
+		}
+	}
+}
+
 // Flush grava os clientes alterados desde a última gravação.
 func (r *Registry) Flush() {
 	if r.opts.Store == nil {

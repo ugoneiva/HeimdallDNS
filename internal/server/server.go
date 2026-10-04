@@ -81,6 +81,9 @@ type Options struct {
 	Upstream     Exchanger
 	Clients      *clients.Registry // nil = sem radar
 	NRD          NRDBlocker        // nil = sem bloqueio de recém-registrados
+	// Nomes dinâmicos (concessões DHCP): <nome>.<domínio> e o reverso.
+	LocalLookup func(name string) []netip.Addr
+	LocalPTR    func(ip netip.Addr) string
 	// DNS criptografado (DoT/DoH). TLS precisa estar preenchido para usar
 	// DoTListen ou DoHListen sem DoHPlain.
 	TLS        *tls.Config
@@ -407,11 +410,25 @@ func (s *Server) resolve(key cache.Key, cd bool) (*dns.Msg, string, error) {
 }
 
 func (s *Server) localAnswer(r *dns.Msg, name string) *dns.Msg {
+	q := r.Question[0]
+	if q.Qtype == dns.TypePTR && s.opts.LocalPTR != nil {
+		if ip, ok := reverseIP(name); ok {
+			if host := s.opts.LocalPTR(ip); host != "" {
+				m := reply(r, dns.RcodeSuccess)
+				m.Authoritative = true
+				m.Answer = []dns.RR{&dns.PTR{Hdr: dns.RR_Header{Name: q.Name, Rrtype: dns.TypePTR, Class: dns.ClassINET, Ttl: 60}, Ptr: host}}
+				return m
+			}
+		}
+	}
 	ips, ok := s.opts.LocalRecords[name]
+	if !ok && s.opts.LocalLookup != nil {
+		ips = s.opts.LocalLookup(name)
+		ok = len(ips) > 0
+	}
 	if !ok {
 		return nil
 	}
-	q := r.Question[0]
 	m := reply(r, dns.RcodeSuccess)
 	m.Authoritative = true
 	for _, ip := range ips {
@@ -548,4 +565,18 @@ func addrOf(a net.Addr) netip.Addr {
 	}
 	addr, _ := netip.AddrFromSlice(ip)
 	return addr.Unmap()
+}
+
+// reverseIP lê "4.3.2.1.in-addr.arpa." como 1.2.3.4 (só IPv4).
+func reverseIP(name string) (netip.Addr, bool) {
+	rest, ok := strings.CutSuffix(strings.ToLower(name), ".in-addr.arpa.")
+	if !ok {
+		return netip.Addr{}, false
+	}
+	p := strings.Split(rest, ".")
+	if len(p) != 4 {
+		return netip.Addr{}, false
+	}
+	a, err := netip.ParseAddr(p[3] + "." + p[2] + "." + p[1] + "." + p[0])
+	return a, err == nil
 }

@@ -316,3 +316,29 @@ func TestOnNewSkipsKnownDeviceWithNewIP(t *testing.T) {
 		t.Errorf("loopback não avisa: %v", got)
 	}
 }
+
+func TestLearnLease(t *testing.T) {
+	var newIDs []string
+	r, _ := NewRegistry(Options{OnNew: func(id string, _ netip.Addr) { newIDs = append(newIDs, id) }})
+	// Aparelho que ainda não consultou o DNS entra pelo DHCP.
+	r.LearnLease(ipA, "AA:AA:AA:00:00:01", "tv-sala")
+	c := r.lookupIP(ipA)
+	if c == nil || c.View().MAC != macX || c.View().Hostname != "tv-sala" || c.View().Queries != 0 {
+		t.Fatalf("aparelho do DHCP = %+v", c)
+	}
+	if len(newIDs) != 1 {
+		t.Errorf("deveria avisar dispositivo novo: %v", newIDs)
+	}
+	// Mesmo MAC com IP novo: o mesmo aparelho, sem aviso.
+	r.LearnLease(ipB, macX, "tv-sala")
+	if r.lookupIP(ipB) != c || len(newIDs) != 1 {
+		t.Errorf("troca de IP: %v %v", r.lookupIP(ipB), newIDs)
+	}
+	// Aparelho que já consultava pelo IP ganha MAC e nome.
+	ipC := netip.MustParseAddr("192.168.1.30")
+	d := r.Observe(ipC, time.Now())
+	r.LearnLease(ipC, macY, "notebook")
+	if v := d.View(); v.MAC != macY || v.Hostname != "notebook" {
+		t.Errorf("aprendeu pelo DHCP: %+v", v)
+	}
+}

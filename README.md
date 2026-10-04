@@ -2,7 +2,7 @@
 
 Servidor DNS com filtro de bloqueio, no estilo do Pi-hole, escrito em Go, com funções mais avançadas: radar de dispositivos, isolamento por cliente e dashboard em tempo real.
 
-> **Estado:** em desenvolvimento. MVP completo (motor DNS, radar, histórico, log ao vivo, painel web), detecções de segurança com exportação para o Wazuh e DNS criptografado (DoT/DoH) para aparelhos dentro e fora da rede.
+> **Estado:** em desenvolvimento. MVP completo (motor DNS, radar, histórico, log ao vivo, painel web), detecções de segurança com exportação para o Wazuh, DNS criptografado (DoT/DoH) para aparelhos dentro e fora da rede e DHCP opcional.
 
 ## O que já funciona
 
@@ -134,6 +134,18 @@ Certificado:
 - **Em arquivo** (`dns.tls_cert`/`tls_key`): recarregado sozinho quando o certbot renova.
 - **Automático** (`dns.acme: true`): Let's Encrypt pelo desafio TLS-ALPN-01 na porta 443, emitindo também `<token>.host` para os tokens válidos.
 
+### DHCP (opcional)
+
+Servidor DHCPv4 embutido, **desligado por padrão**. Antes de ligar, desligue o DHCP do roteador: dois servidores DHCP na mesma rede brigam.
+
+- **Configuração entregue:** cada aparelho recebe IP, máscara, roteador, este servidor como DNS, domínio e prazo.
+- **Endereços:** o aparelho tende a voltar ao mesmo IP. Há reservas por MAC (inclusive fora da faixa), feitas pelo painel ou pelo botão "Fixar IP" na concessão.
+- **Mensagens tratadas:** DISCOVER, REQUEST (com NAK para pedido indevido e silêncio quando o cliente escolheu outro servidor), renovação, RELEASE, DECLINE (o IP em conflito fica fora por 10 min) e INFORM.
+- **Radar:** MAC e nome vêm direto da concessão. Aparelhos que **nunca consultam o DNS** também aparecem (com zero consultas), o que denuncia DNS fixo em outro servidor, um jeito de escapar do filtro.
+- **DNS local:** `notebook-da-ana.lan` resolve sozinho, com reverso (PTR).
+
+A porta 67 exige `CAP_NET_BIND_SERVICE` e `CAP_NET_RAW`; veja a unit em `deploy/`.
+
 ### API e linha de comando
 
 API REST em `127.0.0.1:8053`, com token. Por padrão o token é gerado em `<data_dir>/api.token`.
@@ -163,6 +175,7 @@ heimdalldns status
 | `GET /api/filter/test?name=&client=` | qual regra decide um domínio (global ou para um dispositivo) |
 | `POST /api/auth/password` | troca a senha do painel (com o token, não pede a atual) |
 | `POST`/`DELETE /api/clients/{ref}/token` · `GET …/access` · `GET …/mobileconfig` | endereço fora da rede do aparelho e perfil da Apple |
+| `GET /api/dhcp` · `POST /api/dhcp/reservations` · `DELETE /api/dhcp/reservations/{mac}` | concessões, configuração e reservas do DHCP |
 | `GET /api/security/events` · `GET /api/security/summary` | alertas (filtros `status`, `kind`, `client`, `range`) e contagens |
 | `POST /api/security/events/{id}/ack` · `…/reopen` | reconhece ou reabre (`{id}` = `all` reconhece todos) |
 | `GET`/`PUT /api/security/settings` · `POST /api/security/ignore` | detecções, isolamento automático e domínios ignorados |
@@ -242,6 +255,7 @@ internal/security   alertas: deduplicação, isolamento automático, configuraç
 internal/export     exportação JSON/syslog para SIEM
 internal/dnsname    domínio registrável (Public Suffix List, só regras ICANN)
 internal/tlsconf    certificado do DoT/DoH: arquivo com recarga ou ACME
+internal/dhcp       servidor DHCPv4: concessões, reservas, DNS local
 internal/api        API REST, login do painel e arquivos do painel
 internal/webui      painel compilado, embutido no binário (gerado por "make web")
 web/                código do painel: React + Vite + Tailwind + TanStack + Recharts
@@ -259,5 +273,4 @@ O painel compilado vai no repositório, então `make build` (ou `go install`) fu
 
 ## Próximas etapas
 
-1. DHCP opcional (nomes e MACs direto das concessões).
-2. Dois nós com sincronização (HA) e console multi-tenant para MSP.
+1. Dois nós com sincronização (HA) e console multi-tenant para MSP.

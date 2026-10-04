@@ -1,6 +1,6 @@
 import { useEffect, useState, type ComponentType } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Gauge, ListFilter, Radar as RadarIcon, ScrollText, Settings as SettingsIcon, ShieldAlert } from 'lucide-react'
+import { Gauge, ListFilter, Network, Radar as RadarIcon, ScrollText, Settings as SettingsIcon, ShieldAlert } from 'lucide-react'
 import { api, authEvents } from './api'
 import type { AuthState } from './types'
 import { cx } from './components/ui'
@@ -12,8 +12,9 @@ import { QueryLog } from './pages/QueryLog'
 import { Lists } from './pages/Lists'
 import { Settings } from './pages/Settings'
 import { Security, useSecuritySummary } from './pages/Security'
+import { DHCP, useDHCP } from './pages/DHCP'
 
-type Page = 'overview' | 'devices' | 'security' | 'queries' | 'lists' | 'settings'
+type Page = 'overview' | 'devices' | 'security' | 'queries' | 'lists' | 'dhcp' | 'settings'
 
 const nav: { page: Page; path: string; label: string; icon: ComponentType<{ className?: string }> }[] = [
   { page: 'overview', path: '', label: 'Visão geral', icon: Gauge },
@@ -21,6 +22,7 @@ const nav: { page: Page; path: string; label: string; icon: ComponentType<{ clas
   { page: 'security', path: 'seguranca', label: 'Segurança', icon: ShieldAlert },
   { page: 'queries', path: 'consultas', label: 'Consultas', icon: ScrollText },
   { page: 'lists', path: 'listas', label: 'Listas e regras', icon: ListFilter },
+  { page: 'dhcp', path: 'dhcp', label: 'DHCP', icon: Network },
   { page: 'settings', path: 'configuracoes', label: 'Configurações', icon: SettingsIcon },
 ]
 
@@ -89,6 +91,8 @@ function Shell({ version, onLogout }: { version: string; onLogout: () => void })
   const sec = useSecuritySummary()
   const openAlerts = sec.data?.open_total ?? 0
   const urgent = (sec.data?.open.critical ?? 0) + (sec.data?.open.high ?? 0) > 0
+  const dhcpOn = useDHCP().data?.enabled ?? false
+  const items = nav.filter((n) => n.page !== 'dhcp' || dhcpOn)
 
   return (
     <div className="min-h-full lg:grid lg:grid-cols-[232px_1fr]">
@@ -101,7 +105,7 @@ function Shell({ version, onLogout }: { version: string; onLogout: () => void })
           </div>
         </div>
         <nav aria-label="Seções" className="flex gap-1 overflow-x-auto px-2 pb-2 lg:flex-col lg:px-3 lg:pb-0">
-          {nav.map((n) => {
+          {items.map((n) => {
             const Icon = n.icon
             const active = n.page === page
             return (
@@ -143,6 +147,7 @@ function Shell({ version, onLogout }: { version: string; onLogout: () => void })
           {page === 'security' && <Security onOpenDevice={(id) => go('devices', id)} />}
           {page === 'queries' && <QueryLog />}
           {page === 'lists' && <Lists />}
+          {page === 'dhcp' && <DHCP onOpenDevice={(id) => go('devices', id)} />}
           {page === 'settings' && <Settings onLogout={onLogout} />}
         </div>
       </main>

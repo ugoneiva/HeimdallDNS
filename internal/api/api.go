@@ -16,6 +16,7 @@ import (
 
 	"github.com/ugoneiva/HeimdallDNS/internal/cache"
 	"github.com/ugoneiva/HeimdallDNS/internal/clients"
+	"github.com/ugoneiva/HeimdallDNS/internal/dhcp"
 	"github.com/ugoneiva/HeimdallDNS/internal/filter"
 	"github.com/ugoneiva/HeimdallDNS/internal/querylog"
 	"github.com/ugoneiva/HeimdallDNS/internal/security"
@@ -37,7 +38,8 @@ type Deps struct {
 	Store     *store.Store
 	Log       *querylog.Recorder
 	Security  *security.Manager
-	NRD       NRDInfo // idade dos domínios (nil = sem checagem)
+	NRD       NRDInfo      // idade dos domínios (nil = sem checagem)
+	DHCP      *dhcp.Server // nil = DHCP desligado
 	Encrypted Encrypted
 	UI        fs.FS // arquivos do painel; nil = sem painel
 	Secure    bool  // HTTPS: o cookie de sessão leva a marca Secure
@@ -91,6 +93,9 @@ func build(d Deps) (*api, http.Handler) {
 	api.HandleFunc("DELETE /api/clients/{ref}/token", a.revokeToken)
 	api.HandleFunc("GET /api/clients/{ref}/mobileconfig", a.mobileconfig)
 	api.HandleFunc("GET /api/encrypted", a.encryptedInfo)
+	api.HandleFunc("GET /api/dhcp", a.dhcpState)
+	api.HandleFunc("POST /api/dhcp/reservations", a.dhcpReserve)
+	api.HandleFunc("DELETE /api/dhcp/reservations/{mac}", a.dhcpUnreserve)
 	api.HandleFunc("GET /api/services", a.services)
 	api.HandleFunc("GET /api/lists", a.lists)
 	api.HandleFunc("POST /api/lists", a.addList)
@@ -304,3 +309,6 @@ func historyStatus(l *querylog.Recorder) map[string]uint64 {
 	ev, rows := l.Dropped()
 	return map[string]uint64{"dropped_events": ev, "dropped_rows": rows}
 }
+
+// timeNow existe para os testes poderem trocar o relógio.
+var timeNow = time.Now

@@ -113,6 +113,19 @@ var migrations = []string{
 		checked    INTEGER NOT NULL,
 		source     TEXT NOT NULL DEFAULT ''
 	) WITHOUT ROWID;`,
+
+	`CREATE TABLE dhcp_leases (
+		ip       TEXT PRIMARY KEY,
+		mac      TEXT NOT NULL,
+		hostname TEXT NOT NULL DEFAULT '',
+		expires  INTEGER NOT NULL
+	) WITHOUT ROWID;
+
+	CREATE TABLE dhcp_reservations (
+		mac  TEXT PRIMARY KEY,
+		ip   TEXT NOT NULL UNIQUE,
+		name TEXT NOT NULL DEFAULT ''
+	) WITHOUT ROWID;`,
 }
 
 type Store struct {

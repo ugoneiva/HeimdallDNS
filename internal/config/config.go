@@ -39,6 +39,7 @@ type Config struct {
 	History      History             `yaml:"history"`
 	Security     Security            `yaml:"security"`
 	Export       Export              `yaml:"export"`
+	DHCP         DHCP                `yaml:"dhcp"`
 	LocalRecords map[string][]string `yaml:"local_records"`
 	DataDir      string              `yaml:"data_dir"`
 	Log          Log                 `yaml:"log"`
@@ -136,6 +137,19 @@ type Security struct {
 	IgnoreDomains   []string      `yaml:"ignore_domains"`
 }
 
+// DHCP é o servidor DHCPv4 opcional. Desligue o DHCP do roteador antes de ligar.
+type DHCP struct {
+	Enabled    bool          `yaml:"enabled"`
+	Interface  string        `yaml:"interface"`   // ex.: eth0
+	RangeStart string        `yaml:"range_start"` // ex.: 192.168.1.100
+	RangeEnd   string        `yaml:"range_end"`
+	Subnet     string        `yaml:"subnet"` // vazio = a da interface
+	Router     []string      `yaml:"router"` // vazio = gateway padrão desta máquina
+	DNS        []string      `yaml:"dns"`    // vazio = esta máquina
+	Domain     string        `yaml:"domain"`
+	LeaseTime  time.Duration `yaml:"lease_time"`
+}
+
 type Export struct {
 	File    string `yaml:"file"`    // JSON por linha, para o agente do Wazuh
 	Syslog  string `yaml:"syslog"`  // udp://host:514 ou tcp://host:514
@@ -197,6 +211,7 @@ func Default() *Config {
 			NewDeviceAlerts: true,
 		},
 		Export: Export{Queries: "none"},
+		DHCP:   DHCP{Domain: "lan", LeaseTime: 24 * time.Hour},
 		History: History{
 			StoreQueries:   true,
 			Retention:      7 * 24 * time.Hour,
@@ -250,6 +265,16 @@ func (c *Config) Validate() error {
 	}
 	if (c.API.TLSCert == "") != (c.API.TLSKey == "") {
 		errs = append(errs, errors.New("api.tls_cert e api.tls_key vão juntos"))
+	}
+	if c.DHCP.Enabled {
+		if c.DHCP.Interface == "" {
+			errs = append(errs, errors.New("dhcp.interface: informe a interface (ex.: eth0)"))
+		}
+		for _, v := range []string{c.DHCP.RangeStart, c.DHCP.RangeEnd} {
+			if a, err := netip.ParseAddr(v); err != nil || !a.Is4() {
+				errs = append(errs, fmt.Errorf("dhcp: range_start/range_end precisam ser IPv4 (%q)", v))
+			}
+		}
 	}
 	if c.History.Retention <= 0 || c.History.StatsRetention <= 0 {
 		errs = append(errs, errors.New("history.retention e history.stats_retention devem ser positivos"))
