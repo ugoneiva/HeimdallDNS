@@ -1,0 +1,221 @@
+// Package config carrega e valida a configuração do HeimdallDNS (YAML).
+package config
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"io"
+	"net/netip"
+	"os"
+	"strings"
+	"time"
+
+	"go.yaml.in/yaml/v3"
+)
+
+// Modos de resposta para domínios bloqueados.
+const (
+	BlockNull     = "null"     // A 0.0.0.0 / AAAA :: (padrão; o navegador falha rápido)
+	BlockNXDomain = "nxdomain" // domínio inexistente
+	BlockRefused  = "refused"  // recusa explícita
+	BlockDrop     = "drop"     // não responde (o cliente espera o tempo-limite)
+)
+
+// Estratégias de upstream.
+const (
+	UpstreamFastest  = "fastest"  // o de menor latência medida, com failover
+	UpstreamParallel = "parallel" // consulta todos e usa a primeira resposta
+	UpstreamFailover = "failover" // na ordem configurada
+)
+
+type Config struct {
+	DNS          DNS                 `yaml:"dns"`
+	Upstream     Upstream            `yaml:"upstream"`
+	Cache        Cache               `yaml:"cache"`
+	Filter       Filter              `yaml:"filter"`
+	LocalRecords map[string][]string `yaml:"local_records"`
+	DataDir      string              `yaml:"data_dir"`
+	Log          Log                 `yaml:"log"`
+}
+
+type DNS struct {
+	Listen          []string `yaml:"listen"`
+	AllowedNetworks []string `yaml:"allowed_networks"`
+	BlockMode       string   `yaml:"block_mode"`
+	BlockTTL        uint32   `yaml:"block_ttl"`
+}
+
+type Upstream struct {
+	Servers        []string      `yaml:"servers"`
+	Bootstrap      []string      `yaml:"bootstrap"`
+	Mode           string        `yaml:"mode"`
+	Timeout        time.Duration `yaml:"timeout"`
+	HealthInterval time.Duration `yaml:"health_interval"`
+}
+
+type Cache struct {
+	Size       int           `yaml:"size"`
+	MinTTL     uint32        `yaml:"min_ttl"`
+	MaxTTL     uint32        `yaml:"max_ttl"`
+	ServeStale time.Duration `yaml:"serve_stale"` // 0 desliga
+}
+
+type Filter struct {
+	Lists          []List        `yaml:"lists"`
+	UpdateInterval time.Duration `yaml:"update_interval"`
+	// Regras próprias. Domínio simples vale para ele e os subdomínios;
+	// também aceitam a sintaxe das listas (||dominio^, /regex/).
+	Allow []string `yaml:"allow"`
+	Deny  []string `yaml:"deny"`
+}
+
+type List struct {
+	Name    string `yaml:"name"`
+	URL     string `yaml:"url"` // http(s)://, file:// ou caminho local
+	Enabled *bool  `yaml:"enabled"`
+}
+
+func (l List) IsEnabled() bool { return l.Enabled == nil || *l.Enabled }
+
+type Log struct {
+	Level   string `yaml:"level"`   // debug, info, warn, error
+	Queries bool   `yaml:"queries"` // registra cada consulta no log
+}
+
+// DefaultAllowedNetworks são as redes privadas: o HeimdallDNS não deve ser
+// um resolvedor aberto para a internet.
+var DefaultAllowedNetworks = []string{
+	"127.0.0.0/8", "::1/128",
+	"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+	"100.64.0.0/10", "169.254.0.0/16",
+	"fc00::/7", "fe80::/10",
+}
+
+func Default() *Config {
+	return &Config{
+		DNS: DNS{
+			Listen:    []string{":53"},
+			BlockMode: BlockNull,
+			BlockTTL:  10,
+		},
+		Upstream: Upstream{
+			Servers: []string{
+				"https://cloudflare-dns.com/dns-query",
+				"tls://dns.quad9.net",
+			},
+			Bootstrap:      []string{"1.1.1.1:53", "9.9.9.9:53"},
+			Mode:           UpstreamFastest,
+			Timeout:        3 * time.Second,
+			HealthInterval: 30 * time.Second,
+		},
+		Cache: Cache{
+			Size:       20000,
+			MaxTTL:     86400,
+			ServeStale: time.Hour,
+		},
+		Filter: Filter{
+			Lists: []List{{
+				Name: "StevenBlack Unified",
+				URL:  "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
+			}},
+			UpdateInterval: 24 * time.Hour,
+		},
+		DataDir: "/var/lib/heimdalldns",
+		Log:     Log{Level: "info"},
+	}
+}
+
+// Load lê o arquivo YAML por cima dos valores padrão.
+func Load(path string) (*Config, error) {
+	cfg := Default()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	dec := yaml.NewDecoder(bytes.NewReader(b))
+	dec.KnownFields(true)
+	// Arquivo vazio (io.EOF) mantém os padrões.
+	if err := dec.Decode(cfg); err != nil && !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return cfg, cfg.Validate()
+}
+
+func (c *Config) Validate() error {
+	var errs []error
+	if len(c.DNS.Listen) == 0 {
+		errs = append(errs, errors.New("dns.listen: informe ao menos um endereço"))
+	}
+	switch c.DNS.BlockMode {
+	case BlockNull, BlockNXDomain, BlockRefused, BlockDrop:
+	default:
+		errs = append(errs, fmt.Errorf("dns.block_mode %q: use null, nxdomain, refused ou drop", c.DNS.BlockMode))
+	}
+	if _, err := c.AllowedPrefixes(); err != nil {
+		errs = append(errs, err)
+	}
+	if len(c.Upstream.Servers) == 0 {
+		errs = append(errs, errors.New("upstream.servers: informe ao menos um servidor"))
+	}
+	switch c.Upstream.Mode {
+	case UpstreamFastest, UpstreamParallel, UpstreamFailover:
+	default:
+		errs = append(errs, fmt.Errorf("upstream.mode %q: use fastest, parallel ou failover", c.Upstream.Mode))
+	}
+	if c.Upstream.Timeout <= 0 {
+		errs = append(errs, errors.New("upstream.timeout deve ser positivo"))
+	}
+	if c.Cache.MaxTTL != 0 && c.Cache.MinTTL > c.Cache.MaxTTL {
+		errs = append(errs, errors.New("cache.min_ttl maior que cache.max_ttl"))
+	}
+	if _, err := c.LocalAddrs(); err != nil {
+		errs = append(errs, err)
+	}
+	for i, l := range c.Filter.Lists {
+		if l.URL == "" {
+			errs = append(errs, fmt.Errorf("filter.lists[%d]: url vazia", i))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func (c *Config) AllowedPrefixes() ([]netip.Prefix, error) {
+	nets := c.DNS.AllowedNetworks
+	if len(nets) == 0 {
+		nets = DefaultAllowedNetworks
+	}
+	out := make([]netip.Prefix, 0, len(nets))
+	for _, n := range nets {
+		if !strings.Contains(n, "/") {
+			a, err := netip.ParseAddr(n)
+			if err != nil {
+				return nil, fmt.Errorf("dns.allowed_networks: %q inválido", n)
+			}
+			out = append(out, netip.PrefixFrom(a, a.BitLen()))
+			continue
+		}
+		p, err := netip.ParsePrefix(n)
+		if err != nil {
+			return nil, fmt.Errorf("dns.allowed_networks: %q inválido", n)
+		}
+		out = append(out, p.Masked())
+	}
+	return out, nil
+}
+
+// LocalAddrs devolve os registros locais com nomes normalizados (FQDN, minúsculo).
+func (c *Config) LocalAddrs() (map[string][]netip.Addr, error) {
+	out := make(map[string][]netip.Addr, len(c.LocalRecords))
+	for name, ips := range c.LocalRecords {
+		fq := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(name), ".")) + "."
+		for _, ip := range ips {
+			a, err := netip.ParseAddr(strings.TrimSpace(ip))
+			if err != nil {
+				return nil, fmt.Errorf("local_records[%s]: IP %q inválido", name, ip)
+			}
+			out[fq] = append(out[fq], a.Unmap())
+		}
+	}
+	return out, nil
+}

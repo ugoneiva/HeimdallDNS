@@ -1,0 +1,54 @@
+# HeimdallDNS — configuração de exemplo.
+# Copie para /etc/heimdalldns/heimdalldns.yaml. Tudo que for omitido usa o padrão.
+
+dns:
+  # Endereços onde o DNS escuta (UDP e TCP).
+  listen: ["0.0.0.0:53", "[::]:53"]
+  # Quem pode consultar. Vazio = redes privadas (10/8, 172.16/12, 192.168/16,
+  # 100.64/10, loopback, fc00::/7, link-local). Nunca exponha para a internet.
+  allowed_networks: []
+  # Resposta para domínio bloqueado: null (0.0.0.0 / ::), nxdomain, refused ou drop.
+  block_mode: "null"
+  block_ttl: 10
+
+upstream:
+  # DNS comum (1.1.1.1:53), DoH (https://), DoT (tls://), DoQ (quic://) ou DNSCrypt (sdns://).
+  servers:
+    - https://cloudflare-dns.com/dns-query
+    - tls://dns.quad9.net
+  # Resolvem os nomes dos upstreams acima. Precisam ser IPs.
+  bootstrap: ["1.1.1.1:53", "9.9.9.9:53"]
+  # fastest (menor latência medida, com failover), parallel ou failover.
+  mode: fastest
+  timeout: 3s
+  health_interval: 30s
+
+cache:
+  size: 20000       # número de respostas
+  min_ttl: 0        # segundos
+  max_ttl: 86400
+  serve_stale: 1h   # serve a resposta vencida enquanto renova; 0 desliga
+
+filter:
+  update_interval: 24h
+  # Formatos aceitos: hosts, domínios (um por linha) e Adblock (||dominio^, @@exceção, /regex/).
+  # Em hosts e listas de domínios, a regra vale só para o nome exato.
+  lists:
+    - name: StevenBlack Unified
+      url: https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
+    - name: HaGeZi Pro
+      url: https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.txt
+      enabled: false
+  # Regras próprias: um domínio simples vale para ele e todos os subdomínios.
+  deny: []
+  allow: []
+
+# Respostas locais (A/AAAA), por exemplo para equipamentos da rede.
+local_records:
+  # nas.casa: ["192.168.0.10"]
+
+data_dir: /var/lib/heimdalldns
+
+log:
+  level: info      # debug, info, warn, error
+  queries: false   # registra cada consulta no log
