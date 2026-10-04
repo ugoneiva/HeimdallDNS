@@ -269,3 +269,60 @@ func TestUIServing(t *testing.T) {
 		t.Errorf("/api/* não cai no painel: %d", r.StatusCode)
 	}
 }
+
+func TestTOTPVectors(t *testing.T) {
+	// RFC 6238, apêndice B (SHA-1), segredo ASCII "12345678901234567890".
+	secret := b32.EncodeToString([]byte("12345678901234567890"))
+	for unix, want := range map[int64]string{59: "287082", 1111111109: "081804", 1234567890: "005924", 2000000000: "279037"} {
+		got, err := totpAt(secret, unix/30)
+		if err != nil || got != want {
+			t.Errorf("t=%d: %s, quero %s", unix, got, want)
+		}
+	}
+}
+
+func TestMFALoginFlow(t *testing.T) {
+	p := newPanel(t)
+	login(t, p)
+	_, out := p.do(t, "POST", "/api/auth/mfa/setup", "")
+	secret, _ := out["secret"].(string)
+	if secret == "" || !strings.HasPrefix(out["uri"].(string), "otpauth://totp/") {
+		t.Fatalf("setup: %v", out)
+	}
+	if r, _ := p.do(t, "POST", "/api/auth/mfa/enable", `{"code":"000000"}`); r.StatusCode != http.StatusBadRequest {
+		t.Errorf("código errado ligou o MFA: %d", r.StatusCode)
+	}
+	code, _ := totpAt(secret, time.Now().Unix()/30)
+	if r, out := p.do(t, "POST", "/api/auth/mfa/enable", `{"code":"`+code+`"}`); r.StatusCode != 200 {
+		t.Fatalf("ligar: %v", out)
+	}
+	if _, st := p.do(t, "GET", "/api/auth/state", ""); st["mfa"] != true {
+		t.Error("estado deveria indicar MFA")
+	}
+	p.do(t, "POST", "/api/auth/logout", "")
+	if r, _ := p.do(t, "POST", "/api/auth/login", `{"password":"senha-forte-1"}`); r.StatusCode != http.StatusUnauthorized {
+		t.Errorf("sem código: %d", r.StatusCode)
+	}
+	// O código usado para ligar não vale de novo (sem reuso); o do passo seguinte vale.
+	if r, _ := p.do(t, "POST", "/api/auth/login", `{"password":"senha-forte-1","code":"`+code+`"}`); r.StatusCode != http.StatusUnauthorized {
+		t.Errorf("reuso do código: %d", r.StatusCode)
+	}
+	next, _ := totpAt(secret, time.Now().Unix()/30+1)
+	if r, out := p.do(t, "POST", "/api/auth/login", `{"password":"senha-forte-1","code":"`+next+`"}`); r.StatusCode != 200 {
+		t.Fatalf("login com MFA: %v", out)
+	}
+	// Desligar pelo painel exige senha e código.
+	if r, _ := p.do(t, "POST", "/api/auth/mfa/disable", `{"password":"senha-forte-1","code":"`+next+`"}`); r.StatusCode != http.StatusForbidden {
+		t.Errorf("desligar com código reusado: %d", r.StatusCode)
+	}
+	// Pelo token da API (recuperação), desliga sem código.
+	req, _ := http.NewRequest("POST", p.ts.URL+"/api/auth/mfa/disable", strings.NewReader("{}"))
+	req.Header.Set("Authorization", "Bearer segredo")
+	req.Header.Set("Content-Type", "application/json")
+	if r, err := http.DefaultClient.Do(req); err != nil || r.StatusCode != 200 {
+		t.Errorf("mfa-off pelo token: %v", r.StatusCode)
+	}
+	if p.api.mfaEnabled() {
+		t.Error("deveria estar desligado")
+	}
+}

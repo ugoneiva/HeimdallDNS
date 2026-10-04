@@ -113,7 +113,7 @@ export type Rules = {
 
 export type Service = { id: string; name: string; group: string; domains: string[] }
 
-export type AuthState = { setup_required: boolean; authenticated: boolean; version: string; mode?: 'dns' | 'console' }
+export type AuthState = { setup_required: boolean; authenticated: boolean; version: string; mode?: 'dns' | 'console'; mfa?: boolean }
 
 export type DomainTest = {
   name: string

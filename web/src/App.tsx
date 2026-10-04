@@ -70,6 +70,7 @@ export default function App() {
     return (
       <Login
         setup={auth.data.setup_required}
+        mfa={auth.data.mfa}
         onDone={() => qc.resetQueries()}
       />
     )

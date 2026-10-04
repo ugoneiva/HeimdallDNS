@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import QRCode from 'qrcode'
 import { LogOut, Monitor, Moon, Sun } from 'lucide-react'
 import { api } from '../api'
 import type { Status } from '../types'
@@ -61,6 +62,8 @@ export function Settings({ onLogout }: { onLogout: () => void }) {
       <DHCPCard />
 
       <PasswordCard />
+
+      <MFACard />
 
       <Card title="Sessão">
         <p className="mb-4 text-xs text-ink-2">
@@ -170,6 +173,101 @@ function PasswordCard() {
     )
   }
   return <PasswordForm />
+}
+
+export function MFACard() {
+  const qc = useQueryClient()
+  const auth = useQuery({ queryKey: ['auth'], queryFn: () => api<{ mfa?: boolean }>('/api/auth/state') })
+  const ha = useHA()
+  const [setup, setSetup] = useState<{ secret: string; uri: string; qr: string } | null>(null)
+  const [code, setCode] = useState('')
+  const [pw, setPw] = useState('')
+  const start = useMutation({
+    mutationFn: async () => {
+      const r = await api<{ secret: string; uri: string }>('/api/auth/mfa/setup', { method: 'POST' })
+      const qr = await QRCode.toDataURL(r.uri, { margin: 1, width: 200 })
+      return { ...r, qr }
+    },
+    onSuccess: setSetup,
+  })
+  const enable = useMutation({
+    mutationFn: () => api('/api/auth/mfa/enable', { method: 'POST', body: { code } }),
+    onSuccess: () => {
+      setSetup(null)
+      setCode('')
+      qc.invalidateQueries({ queryKey: ['auth'] })
+    },
+  })
+  const disable = useMutation({
+    mutationFn: () => api('/api/auth/mfa/disable', { method: 'POST', body: { password: pw, code } }),
+    onSuccess: () => {
+      setPw('')
+      setCode('')
+      qc.invalidateQueries({ queryKey: ['auth'] })
+    },
+  })
+  const on = !!auth.data?.mfa
+  if (ha.data?.role === 'replica') {
+    return (
+      <Card title="Verificação em duas etapas" subtitle={on ? 'Ligada (vem do principal)' : 'Desligada'}>
+        <p className="text-xs text-ink-2">Nesta réplica o MFA vem do principal.</p>
+      </Card>
+    )
+  }
+  return (
+    <Card title="Verificação em duas etapas" subtitle={on ? 'Ligada' : 'Desligada — recomendada, e obrigatória para alterar o Active Directory'}>
+      {on ? (
+        <form
+          className="space-y-3"
+          onSubmit={(e) => {
+            e.preventDefault()
+            disable.mutate()
+          }}
+        >
+          <p className="text-xs text-ink-2">
+            Para desligar, informe a senha e um código. Perdeu o celular? Rode <code className="font-mono text-ink">sudo heimdalldns mfa-off</code> no servidor.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="Senha" autoComplete="current-password" required />
+            <Input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Código" inputMode="numeric" required />
+          </div>
+          <ErrorNote error={disable.error} />
+          <Button type="submit" loading={disable.isPending}>
+            Desligar
+          </Button>
+        </form>
+      ) : setup ? (
+        <form
+          className="space-y-3"
+          onSubmit={(e) => {
+            e.preventDefault()
+            enable.mutate()
+          }}
+        >
+          <p className="text-xs text-ink-2">Leia o QR code no aplicativo autenticador (Google Authenticator, Microsoft Authenticator, Aegis…) e digite o código.</p>
+          <div className="flex flex-wrap items-center gap-4">
+            <img src={setup.qr} alt="QR code do segredo" className="size-40 rounded-lg bg-white p-1" />
+            <div className="min-w-0 text-xs">
+              <p className="text-muted">Ou digite o segredo:</p>
+              <code className="font-mono break-all text-ink">{setup.secret}</code>
+            </div>
+          </div>
+          <Input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Código de 6 dígitos" inputMode="numeric" autoComplete="one-time-code" required />
+          <ErrorNote error={enable.error} />
+          <Button type="submit" variant="primary" loading={enable.isPending}>
+            Confirmar e ligar
+          </Button>
+        </form>
+      ) : (
+        <>
+          <ErrorNote error={start.error} />
+          <Button variant="primary" loading={start.isPending} onClick={() => start.mutate()}>
+            Ligar verificação em duas etapas
+          </Button>
+        </>
+      )}
+    </Card>
+  )
 }
 
 export function PasswordForm() {

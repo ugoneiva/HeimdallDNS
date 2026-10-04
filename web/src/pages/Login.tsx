@@ -5,8 +5,9 @@ import { api } from '../api'
 import { Button, ErrorNote, Field, Input } from '../components/ui'
 import { Logo } from '../components/Logo'
 
-export function Login({ setup, onDone }: { setup: boolean; onDone: () => void }) {
+export function Login({ setup, mfa, onDone }: { setup: boolean; mfa?: boolean; onDone: () => void }) {
   const [code, setCode] = useState('')
+  const [otp, setOtp] = useState('')
   const [pw, setPw] = useState('')
   const [pw2, setPw2] = useState('')
   const m = useMutation({
@@ -15,7 +16,7 @@ export function Login({ setup, onDone }: { setup: boolean; onDone: () => void })
         if (pw !== pw2) throw new Error('As senhas não conferem.')
         return api('/api/auth/setup', { method: 'POST', body: { code, password: pw } })
       }
-      return api('/api/auth/login', { method: 'POST', body: { password: pw } })
+      return api('/api/auth/login', { method: 'POST', body: { password: pw, code: otp } })
     },
     onSuccess: onDone,
   })
@@ -69,6 +70,19 @@ export function Login({ setup, onDone }: { setup: boolean; onDone: () => void })
               autoFocus={!setup}
             />
           </Field>
+          {!setup && mfa && (
+            <Field label="Código do aplicativo autenticador">
+              <Input
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder="000000"
+                className="font-mono tracking-widest"
+                required
+              />
+            </Field>
+          )}
           {setup && (
             <Field label="Repita a senha">
               <Input type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} autoComplete="new-password" minLength={8} required />

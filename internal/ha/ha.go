@@ -49,6 +49,7 @@ type Snapshot struct {
 	Deny         []string          `json:"deny"`
 	Security     security.Settings `json:"security"`
 	PasswordHash string            `json:"password_hash"`
+	MFA          json.RawMessage   `json:"mfa,omitempty"` // verificação em duas etapas do painel
 	Clients      []clients.State   `json:"clients"`
 }
 

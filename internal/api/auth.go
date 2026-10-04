@@ -179,6 +179,7 @@ func (a *api) authState(w http.ResponseWriter, r *http.Request) {
 		"authenticated":  ok,
 		"version":        a.Version,
 		"mode":           map[bool]string{true: "console", false: "dns"}[a.Console != nil],
+		"mfa":            a.mfaEnabled(),
 	})
 }
 
@@ -245,6 +246,7 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		Password string `json:"password"`
+		Code     string `json:"code"`
 	}
 	if !readJSON(w, r, &body) {
 		return
@@ -262,6 +264,12 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 		a.guard.fail(ip)
 		a.Logger.Warn("senha errada no painel", "origem", ip)
 		writeErr(w, http.StatusUnauthorized, errors.New("senha incorreta"))
+		return
+	}
+	if err := a.verifyMFA(body.Code); err != nil {
+		a.guard.fail(ip)
+		a.Logger.Warn("código de verificação errado no painel", "origem", ip)
+		writeErr(w, http.StatusUnauthorized, err)
 		return
 	}
 	a.guard.ok(ip)

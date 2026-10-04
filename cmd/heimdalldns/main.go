@@ -517,7 +517,15 @@ func newHA(ctx context.Context, cfg *config.Config, db *store.Store, flt *filter
 			if _, err = db.GetJSON(api.DenyKey, &snap.Deny); err != nil {
 				return snap, err
 			}
-			_, err = db.GetJSON(api.PasswordKey, &snap.PasswordHash)
+			if _, err = db.GetJSON(api.PasswordKey, &snap.PasswordHash); err != nil {
+				return snap, err
+			}
+			var m api.MFA
+			if _, err = db.GetJSON(api.MFAKey, &m); err != nil {
+				return snap, err
+			}
+			m.Pending, m.LastStep = "", 0 // só o que importa para entrar
+			snap.MFA, err = json.Marshal(m)
 			return snap, err
 		}, log)
 		log.Info("nó principal: réplicas sincronizam em /api/sync/snapshot")
@@ -551,6 +559,19 @@ func newHA(ctx context.Context, cfg *config.Config, db *store.Store, flt *filter
 				if s.PasswordHash != "" {
 					if err := db.SetJSON(api.PasswordKey, s.PasswordHash); err != nil {
 						return err
+					}
+				}
+				if len(s.MFA) > 0 {
+					var m api.MFA
+					if err := json.Unmarshal(s.MFA, &m); err != nil {
+						return err
+					}
+					var local api.MFA
+					_, _ = db.GetJSON(api.MFAKey, &local)
+					if m.Secret != local.Secret || m.Enabled != local.Enabled {
+						if err := db.SetJSON(api.MFAKey, m); err != nil {
+							return err
+						}
 					}
 				}
 				return reg.ApplyRemote(s.Clients)
@@ -679,6 +700,7 @@ Comandos:
   forget  <ref>                     esquece o dispositivo
   services                          serviços para regras (service:tiktok, service:social…)
   passwd                            define uma nova senha do painel (recupera o acesso)
+  mfa-off                           desliga a verificação em duas etapas (perdeu o celular)
   console [-listen] [-data-dir]     roda o console de MSP (vários HeimdallDNS num painel só)
 
 <ref> é o id, IP, MAC ou nome do dispositivo.

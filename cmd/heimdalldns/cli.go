@@ -25,7 +25,7 @@ import (
 
 var commands = map[string]bool{
 	"status": true, "clients": true, "client": true, "name": true, "isolate": true,
-	"release": true, "rules": true, "forget": true, "services": true, "passwd": true,
+	"release": true, "rules": true, "forget": true, "services": true, "passwd": true, "mfa-off": true,
 }
 
 func isCommand(s string) bool { return commands[s] }
@@ -137,6 +137,12 @@ func runCLI(cmd string, args []string) error {
 			return err
 		}
 		fmt.Println("senha do painel alterada; as sessões abertas foram encerradas")
+		return nil
+	case "mfa-off":
+		if err := c.do("POST", "/api/auth/mfa/disable", map[string]string{}, nil); err != nil {
+			return err
+		}
+		fmt.Println("verificação em duas etapas desligada; ligue de novo pelo painel")
 		return nil
 	case "services":
 		var out struct {
