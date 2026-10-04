@@ -2,7 +2,7 @@
 
 Servidor DNS com filtro de bloqueio, no estilo do Pi-hole, escrito em Go, com funções mais avançadas: radar de dispositivos, isolamento por cliente e dashboard em tempo real.
 
-> **Estado:** em desenvolvimento. MVP completo (motor DNS, radar, histórico, log ao vivo, painel web) e detecções de segurança com exportação para o Wazuh.
+> **Estado:** em desenvolvimento. MVP completo (motor DNS, radar, histórico, log ao vivo, painel web), detecções de segurança com exportação para o Wazuh e DNS criptografado (DoT/DoH) para aparelhos dentro e fora da rede.
 
 ## O que já funciona
 
@@ -113,6 +113,27 @@ Limites conhecidos:
 - **Domínio recém-registrado:** no modo bloqueio, o **primeiro** acesso a um domínio ainda desconhecido passa enquanto a data é consultada.
 - **TLDs sem RDAP:** ficam sem idade.
 
+### DNS criptografado e aparelhos fora da rede
+
+O HeimdallDNS atende **DoT** (RFC 7858, porta 853) e **DoH** (RFC 8484, GET e POST, HTTP/2), além do DNS comum.
+
+Com isso, cada aparelho pode ganhar no painel um **endereço próprio** (Dispositivos → Fora da rede). Usando esse endereço, o aparelho continua com **as regras, o isolamento e os alertas dele** em qualquer rede: 4G, hotel, casa.
+
+| Onde | Como o aparelho se identifica |
+|---|---|
+| DoH | `https://dns.suaempresa.com.br/dns-query/<token>` |
+| DoT (DNS privado do Android) | `<token>.dns.suaempresa.com.br` (nome do host; precisa do registro DNS curinga `*.dns.suaempresa.com.br`) |
+| iPhone, iPad, Mac | perfil `.mobileconfig` gerado pelo painel, que liga o DoH com um toque |
+
+Regras de acesso:
+- **Sem token:** valem as mesmas redes permitidas do DNS comum.
+- **Com token válido:** o aparelho é aceito de qualquer IP. O IP público não entra na lista de IPs do aparelho, porque atrás de um NAT ele é de muita gente.
+- **Trocar ou revogar o token** invalida o endereço antigo na hora.
+
+Certificado:
+- **Em arquivo** (`dns.tls_cert`/`tls_key`): recarregado sozinho quando o certbot renova.
+- **Automático** (`dns.acme: true`): Let's Encrypt pelo desafio TLS-ALPN-01 na porta 443, emitindo também `<token>.host` para os tokens válidos.
+
 ### API e linha de comando
 
 API REST em `127.0.0.1:8053`, com token. Por padrão o token é gerado em `<data_dir>/api.token`.
@@ -141,6 +162,7 @@ heimdalldns status
 | `GET /api/rules` · `PUT /api/rules` · `POST /api/rules/quick` | regras próprias globais; `quick` bloqueia/libera um domínio |
 | `GET /api/filter/test?name=&client=` | qual regra decide um domínio (global ou para um dispositivo) |
 | `POST /api/auth/password` | troca a senha do painel (com o token, não pede a atual) |
+| `POST`/`DELETE /api/clients/{ref}/token` · `GET …/access` · `GET …/mobileconfig` | endereço fora da rede do aparelho e perfil da Apple |
 | `GET /api/security/events` · `GET /api/security/summary` | alertas (filtros `status`, `kind`, `client`, `range`) e contagens |
 | `POST /api/security/events/{id}/ack` · `…/reopen` | reconhece ou reabre (`{id}` = `all` reconhece todos) |
 | `GET`/`PUT /api/security/settings` · `POST /api/security/ignore` | detecções, isolamento automático e domínios ignorados |
@@ -219,6 +241,7 @@ internal/nrd        idade dos domínios via RDAP (bootstrap da IANA)
 internal/security   alertas: deduplicação, isolamento automático, configurações
 internal/export     exportação JSON/syslog para SIEM
 internal/dnsname    domínio registrável (Public Suffix List, só regras ICANN)
+internal/tlsconf    certificado do DoT/DoH: arquivo com recarga ou ACME
 internal/api        API REST, login do painel e arquivos do painel
 internal/webui      painel compilado, embutido no binário (gerado por "make web")
 web/                código do painel: React + Vite + Tailwind + TanStack + Recharts
@@ -236,5 +259,5 @@ O painel compilado vai no repositório, então `make build` (ou `go install`) fu
 
 ## Próximas etapas
 
-1. Servidor DoH/DoT próprio (proteção fora da rede) e DHCP opcional.
+1. DHCP opcional (nomes e MACs direto das concessões).
 2. Dois nós com sincronização (HA) e console multi-tenant para MSP.

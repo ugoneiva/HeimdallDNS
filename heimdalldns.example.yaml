@@ -10,6 +10,16 @@ dns:
   # Resposta para domínio bloqueado: null (0.0.0.0 / ::), nxdomain, refused ou drop.
   block_mode: "null"
   block_ttl: 10
+  # DNS criptografado (DoT/DoH), também para aparelhos fora da rede. Cada
+  # aparelho pode ganhar um endereço próprio no painel (Dispositivos → Fora da rede).
+  public_host: ""           # ex.: dns.suaempresa.com.br (aponte para este servidor)
+  dot_listen: []            # ex.: [":853"]  (DoT por aparelho: registro curinga *.public_host)
+  doh_listen: ""            # ex.: ":443"
+  doh_plain_http: false     # DoH em HTTP puro, atrás de um proxy reverso que termina o TLS
+  tls_cert: ""              # certificado em arquivo (recarregado quando o certbot renova)
+  tls_key: ""
+  acme: false               # ou certificado automático do Let's Encrypt (precisa da 443 aberta)
+  acme_email: ""
 
 upstream:
   # DNS comum (1.1.1.1:53), DoH (https://), DoT (tls://), DoQ (quic://) ou DNSCrypt (sdns://).

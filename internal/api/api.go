@@ -25,22 +25,23 @@ import (
 )
 
 type Deps struct {
-	Context  context.Context // vida do serviço (atualizações em segundo plano)
-	Token    string
-	Version  string
-	Started  time.Time
-	Server   *server.Server
-	Cache    *cache.Cache
-	Upstream *upstream.Group
-	Filter   *filter.Manager
-	Clients  *clients.Registry
-	Store    *store.Store
-	Log      *querylog.Recorder
-	Security *security.Manager
-	NRD      NRDInfo // idade dos domínios (nil = sem checagem)
-	UI       fs.FS   // arquivos do painel; nil = sem painel
-	Secure   bool    // HTTPS: o cookie de sessão leva a marca Secure
-	Logger   *slog.Logger
+	Context   context.Context // vida do serviço (atualizações em segundo plano)
+	Token     string
+	Version   string
+	Started   time.Time
+	Server    *server.Server
+	Cache     *cache.Cache
+	Upstream  *upstream.Group
+	Filter    *filter.Manager
+	Clients   *clients.Registry
+	Store     *store.Store
+	Log       *querylog.Recorder
+	Security  *security.Manager
+	NRD       NRDInfo // idade dos domínios (nil = sem checagem)
+	Encrypted Encrypted
+	UI        fs.FS // arquivos do painel; nil = sem painel
+	Secure    bool  // HTTPS: o cookie de sessão leva a marca Secure
+	Logger    *slog.Logger
 }
 
 // NRDInfo é o que a API usa do verificador de domínios recém-registrados.
@@ -85,6 +86,11 @@ func build(d Deps) (*api, http.Handler) {
 	api.HandleFunc("DELETE /api/clients/{ref}", a.forgetClient)
 	api.HandleFunc("POST /api/clients/{ref}/isolate", a.isolate)
 	api.HandleFunc("POST /api/clients/{ref}/release", a.release)
+	api.HandleFunc("GET /api/clients/{ref}/access", a.getAccess)
+	api.HandleFunc("POST /api/clients/{ref}/token", a.newToken)
+	api.HandleFunc("DELETE /api/clients/{ref}/token", a.revokeToken)
+	api.HandleFunc("GET /api/clients/{ref}/mobileconfig", a.mobileconfig)
+	api.HandleFunc("GET /api/encrypted", a.encryptedInfo)
 	api.HandleFunc("GET /api/services", a.services)
 	api.HandleFunc("GET /api/lists", a.lists)
 	api.HandleFunc("POST /api/lists", a.addList)

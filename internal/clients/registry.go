@@ -48,6 +48,9 @@ type Settings struct {
 	Allow           []string  `json:"allow,omitempty"`
 	Deny            []string  `json:"deny,omitempty"`
 	SkipGlobalLists bool      `json:"skip_global_lists,omitempty"`
+	// AccessToken identifica o aparelho fora da rede (DoH /dns-query/<token>,
+	// DoT <token>.<host público>), com a política dele em qualquer lugar.
+	AccessToken string `json:"access_token,omitempty"`
 }
 
 // Policy é a versão compilada e imutável de Settings, lida a cada consulta.
@@ -249,6 +252,7 @@ type Registry struct {
 	byID  map[string]*Client
 	byIP  map[netip.Addr]*Client
 	byMAC map[string]*Client
+	byTok map[string]*Client
 
 	fresh     map[string]bool // criados e ainda não confirmados como novos (ver OnNew)
 	vendors   atomic.Pointer[OUI]
@@ -271,6 +275,7 @@ func NewRegistry(opts Options) (*Registry, error) {
 		byID:   map[string]*Client{},
 		byIP:   map[netip.Addr]*Client{},
 		byMAC:  map[string]*Client{},
+		byTok:  map[string]*Client{},
 		fresh:  map[string]bool{},
 		enrich: make(chan netip.Addr, 1024),
 	}
@@ -298,6 +303,9 @@ func NewRegistry(opts Options) (*Registry, error) {
 		}
 		if c.mac != "" {
 			r.byMAC[c.mac] = c
+		}
+		if t := c.settings.AccessToken; t != "" {
+			r.byTok[t] = c
 		}
 	}
 	r.log.Info("clientes carregados", "total", len(recs))
@@ -485,11 +493,65 @@ func (r *Registry) Release(c *Client) error {
 	return err
 }
 
+// ByToken acha o aparelho pelo token de acesso de fora da rede.
+func (r *Registry) ByToken(tok string) *Client {
+	if tok == "" {
+		return nil
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.byTok[strings.ToLower(tok)]
+}
+
+// ObserveToken registra uma consulta de um aparelho identificado pelo token
+// (fora da rede). O IP público não entra na lista de IPs do aparelho: atrás
+// de um NAT ele é de muita gente.
+func (r *Registry) ObserveToken(tok string, t time.Time) *Client {
+	c := r.ByToken(tok)
+	if c != nil {
+		c.touch(t)
+	}
+	return c
+}
+
+// SetToken cria (ou troca) o token de acesso do aparelho. Vazio = revoga.
+func (r *Registry) SetToken(c *Client, revoke bool) (string, error) {
+	tok := ""
+	if !revoke {
+		b := make([]byte, 8)
+		if _, err := rand.Read(b); err != nil {
+			return "", err
+		}
+		tok = hex.EncodeToString(b) // 16 caracteres, válido como rótulo DNS (DoT por SNI)
+	}
+	var old string
+	err := r.Update(c, func(s *Settings) error {
+		old, s.AccessToken = s.AccessToken, tok
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	r.mu.Lock()
+	delete(r.byTok, old)
+	if tok != "" {
+		r.byTok[tok] = c
+	}
+	r.mu.Unlock()
+	return tok, nil
+}
+
+// ValidToken diz se o token pertence a algum aparelho (para o certificado ACME por nome).
+func (r *Registry) ValidToken(tok string) bool { return r.ByToken(tok) != nil }
+
 // Forget apaga o cliente. Se ele consultar de novo, volta como novo.
 func (r *Registry) Forget(c *Client) error {
 	r.mu.Lock()
 	c.mu.Lock()
 	delete(r.byID, c.id)
+	if t := c.settings.AccessToken; t != "" {
+		delete(r.byTok, t)
+	}
 	for _, ip := range c.ips {
 		if r.byIP[ip] == c {
 			delete(r.byIP, ip)

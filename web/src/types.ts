@@ -40,6 +40,7 @@ export type Settings = {
   allow?: string[]
   deny?: string[]
   skip_global_lists?: boolean
+  access_token?: string
 }
 
 export type Device = {
@@ -156,4 +157,13 @@ export type SecuritySettings = {
   new_device: boolean
   auto_isolate: string[]
   ignore_domains: string[]
+}
+
+export type DeviceAccess = {
+  public_host: string
+  doh: boolean
+  dot: boolean
+  token?: string
+  doh_url?: string
+  dot_host?: string
 }

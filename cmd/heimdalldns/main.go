@@ -34,6 +34,7 @@ import (
 	"github.com/ugoneiva/HeimdallDNS/internal/security"
 	"github.com/ugoneiva/HeimdallDNS/internal/server"
 	"github.com/ugoneiva/HeimdallDNS/internal/store"
+	"github.com/ugoneiva/HeimdallDNS/internal/tlsconf"
 	"github.com/ugoneiva/HeimdallDNS/internal/upstream"
 	"github.com/ugoneiva/HeimdallDNS/internal/webui"
 )
@@ -240,6 +241,15 @@ func runServer() error {
 	})
 	go qlog.Run(ctx)
 
+	tlsCfg, err := tlsconf.New(tlsconf.Options{
+		CertFile: cfg.DNS.TLSCert, KeyFile: cfg.DNS.TLSKey,
+		ACME: cfg.DNS.ACME, Email: cfg.DNS.ACMEEmail, CacheDir: filepath.Join(cfg.DataDir, "acme"),
+		Host: cfg.DNS.PublicHost, ValidToken: reg.ValidToken,
+	})
+	if err != nil {
+		return err
+	}
+
 	allowed, _ := cfg.AllowedPrefixes()
 	local, _ := cfg.LocalAddrs()
 	dnsCache := cache.New(cache.Options{
@@ -259,6 +269,11 @@ func runServer() error {
 		Upstream:     ups,
 		Clients:      reg,
 		NRD:          nrdCheck,
+		TLS:          tlsCfg,
+		PublicHost:   cfg.DNS.PublicHost,
+		DoTListen:    cfg.DNS.DoTListen,
+		DoHListen:    cfg.DNS.DoHListen,
+		DoHPlain:     cfg.DNS.DoHPlainHTTP,
 		Timeout:      cfg.Upstream.Timeout + time.Second,
 		Logger:       log.With("componente", "dns"),
 		OnQuery:      onQuery(qlog, det, exp, log, cfg.Log.Queries),
@@ -283,6 +298,10 @@ func runServer() error {
 				Context: ctx, Token: token, Version: version, Started: started,
 				Server: srv, Cache: dnsCache, Upstream: ups, Filter: flt, Clients: reg,
 				Store: db, Log: qlog, Security: sec, NRD: nrdCheck, UI: webui.FS(), Secure: tls,
+				Encrypted: api.Encrypted{
+					PublicHost: cfg.DNS.PublicHost, DoH: cfg.DNS.DoHListen != "", DoT: len(cfg.DNS.DoTListen) > 0,
+					DoHPort: portOf(cfg.DNS.DoHListen), DoTPort: portOf(firstOr(cfg.DNS.DoTListen)),
+				},
 				Logger: log.With("componente", "api"),
 			}),
 			ReadHeaderTimeout: 10 * time.Second,
@@ -395,6 +414,20 @@ func onQuery(qlog *querylog.Recorder, det *detect.Detector, exp *export.Exporter
 			"status", e.Status, "rcode", e.Rcode, "regra", e.Rule, "upstream", e.Upstream,
 			"tempo", e.Duration.Round(time.Microsecond))
 	}
+}
+
+func portOf(addr string) string {
+	if _, p, err := net.SplitHostPort(addr); err == nil {
+		return p
+	}
+	return ""
+}
+
+func firstOr(s []string) string {
+	if len(s) == 0 {
+		return ""
+	}
+	return s[0]
 }
 
 func parseLevel(s string) slog.Level {

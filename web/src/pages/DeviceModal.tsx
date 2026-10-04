@@ -6,8 +6,9 @@ import type { Device, Ranked, Service, Summary } from '../types'
 import { ago, fmtDateTime, fmtInt, fmtPct, modeLabel } from '../lib/format'
 import { Button, ErrorNote, Field, Input, Modal, Segmented, Select, StatusBadge, Switch, Textarea, cx } from '../components/ui'
 import { RankList } from '../components/charts'
+import { RoamingTab } from './RoamingTab'
 
-type Tab = 'summary' | 'rules' | 'isolate'
+type Tab = 'summary' | 'rules' | 'isolate' | 'roaming'
 
 const lines = (s: string) =>
   s
@@ -30,11 +31,13 @@ export function DeviceModal({ device, onClose }: { device: Device | null; onClos
               { value: 'summary', label: 'Resumo' },
               { value: 'rules', label: 'Regras' },
               { value: 'isolate', label: device.settings.isolated ? 'Isolamento (ativo)' : 'Isolamento' },
+              { value: 'roaming', label: device.settings.access_token ? 'Fora da rede (ativo)' : 'Fora da rede' },
             ]}
           />
           {tab === 'summary' && <SummaryTab d={device} onForget={onClose} />}
           {tab === 'rules' && <RulesTab d={device} />}
           {tab === 'isolate' && <IsolateTab d={device} />}
+          {tab === 'roaming' && <RoamingTab d={device} />}
         </div>
       )}
     </Modal>

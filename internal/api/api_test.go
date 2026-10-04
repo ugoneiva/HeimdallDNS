@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"encoding/xml"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -263,5 +265,48 @@ func TestHistoryRoutes(t *testing.T) {
 		if resp, _ := call(t, ts, "GET", bad, "segredo", ""); resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("%s: %d", bad, resp.StatusCode)
 		}
+	}
+}
+
+func TestAccessTokenAndMobileconfig(t *testing.T) {
+	reg, _ := clients.NewRegistry(clients.Options{})
+	c := reg.Observe(netip.MustParseAddr("192.168.0.70"), time.Now())
+	reg.Update(c, func(s *clients.Settings) error { s.Name = "iPhone <da Ana>"; return nil })
+	ts := httptest.NewServer(New(Deps{Token: "segredo", Clients: reg,
+		Encrypted: Encrypted{PublicHost: "dns.empresa.com.br", DoH: true, DoT: true, DoHPort: "443", DoTPort: "853"}}))
+	defer ts.Close()
+
+	if resp, _ := call(t, ts, "GET", "/api/clients/"+c.ID()+"/mobileconfig", "segredo", ""); resp.StatusCode != http.StatusConflict {
+		t.Errorf("sem token, perfil = %d", resp.StatusCode)
+	}
+	resp, out := call(t, ts, "POST", "/api/clients/"+c.ID()+"/token", "segredo", "")
+	tok, _ := out["token"].(string)
+	if resp.StatusCode != 200 || len(tok) != 16 ||
+		out["doh_url"] != "https://dns.empresa.com.br/dns-query/"+tok || out["dot_host"] != tok+".dns.empresa.com.br" {
+		t.Fatalf("token: %d %v", resp.StatusCode, out)
+	}
+	req, _ := http.NewRequest("GET", ts.URL+"/api/clients/"+c.ID()+"/mobileconfig", nil)
+	req.Header.Set("Authorization", "Bearer segredo")
+	r, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(r.Body)
+	r.Body.Close()
+	p := string(body)
+	if r.Header.Get("Content-Type") != "application/x-apple-aspen-config" ||
+		!strings.Contains(p, "<string>https://dns.empresa.com.br/dns-query/"+tok+"</string>") ||
+		!strings.Contains(p, "com.apple.dnsSettings.managed") ||
+		!strings.Contains(p, "iPhone &lt;da Ana&gt;") {
+		t.Errorf("perfil:\n%s", p)
+	}
+	if err := xml.Unmarshal(body, new(struct{})); err != nil {
+		t.Errorf("perfil não é XML válido: %v", err)
+	}
+	if resp, out := call(t, ts, "DELETE", "/api/clients/"+c.ID()+"/token", "segredo", ""); resp.StatusCode != 200 || out["token"] != nil {
+		t.Errorf("revogar: %d %v", resp.StatusCode, out)
+	}
+	if reg.ByToken(tok) != nil {
+		t.Error("token revogado continua valendo")
 	}
 }

@@ -4,9 +4,11 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"net/netip"
 	"strings"
 	"sync/atomic"
@@ -79,9 +81,16 @@ type Options struct {
 	Upstream     Exchanger
 	Clients      *clients.Registry // nil = sem radar
 	NRD          NRDBlocker        // nil = sem bloqueio de recém-registrados
-	Timeout      time.Duration
-	Logger       *slog.Logger
-	OnQuery      func(Event) // chamado para cada consulta; não deve bloquear
+	// DNS criptografado (DoT/DoH). TLS precisa estar preenchido para usar
+	// DoTListen ou DoHListen sem DoHPlain.
+	TLS        *tls.Config
+	PublicHost string   // ex.: dns.empresa.com.br (tokens de DoT por SNI)
+	DoTListen  []string // ex.: [":853"]
+	DoHListen  string   // ex.: ":443"
+	DoHPlain   bool     // DoH em HTTP puro, atrás de um proxy reverso que termina o TLS
+	Timeout    time.Duration
+	Logger     *slog.Logger
+	OnQuery    func(Event) // chamado para cada consulta; não deve bloquear
 }
 
 type Counters struct {
@@ -96,11 +105,14 @@ type Counters struct {
 }
 
 type Server struct {
-	opts    Options
-	log     *slog.Logger
-	sf      singleflight.Group
-	servers []*dns.Server
-	addrs   []net.Addr
+	opts     Options
+	log      *slog.Logger
+	sf       singleflight.Group
+	servers  []*dns.Server
+	addrs    []net.Addr
+	dotAddrs []net.Addr
+	doh      *http.Server
+	dohAddr  net.Addr
 
 	total, forwarded, cached, blocked, isolated, local, refused, errs atomic.Uint64
 }
@@ -148,15 +160,26 @@ func (s *Server) Start() error {
 		s.addrs = append(s.addrs, pc.LocalAddr())
 		s.log.Info("DNS ouvindo", "endereco", tcpAddr)
 	}
+	if err := s.startEncrypted(); err != nil {
+		s.Shutdown(context.Background())
+		return err
+	}
 	return nil
 }
 
 // Addrs devolve os endereços UDP efetivos (útil quando a porta é 0).
 func (s *Server) Addrs() []net.Addr { return s.addrs }
 
+// DoTAddrs e DoHAddr devolvem os endereços efetivos do DNS criptografado.
+func (s *Server) DoTAddrs() []net.Addr { return s.dotAddrs }
+func (s *Server) DoHAddr() net.Addr    { return s.dohAddr }
+
 func (s *Server) Shutdown(ctx context.Context) {
 	for _, srv := range s.servers {
 		_ = srv.ShutdownContext(ctx)
+	}
+	if s.doh != nil {
+		_ = s.doh.Shutdown(ctx)
 	}
 }
 
@@ -167,27 +190,74 @@ func (s *Server) Counters() Counters {
 	}
 }
 
+// origin diz quem pergunta e por qual transporte.
+type origin struct {
+	client netip.Addr
+	proto  string // udp, tcp, dot ou doh
+	token  string // token de acesso do aparelho (DoT por SNI, DoH pelo caminho)
+}
+
 func (s *Server) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
-	ev := Event{Time: time.Now(), Proto: "udp"}
+	o := origin{client: addrOf(w.RemoteAddr()), proto: "udp"}
 	if _, ok := w.RemoteAddr().(*net.TCPAddr); ok {
-		ev.Proto = "tcp"
+		o.proto = "tcp"
 	}
-	ev.Client = addrOf(w.RemoteAddr())
+	if cs, ok := w.(dns.ConnectionStater); ok {
+		if st := cs.ConnectionState(); st != nil {
+			o.proto, o.token = "dot", s.tokenFromSNI(st.ServerName)
+		}
+	}
+	resp := s.answer(r, o)
+	if resp == nil {
+		if o.proto != "udp" {
+			_ = w.Close()
+		}
+		return
+	}
+	if err := w.WriteMsg(resp); err != nil {
+		s.log.Debug("falha ao responder", "erro", err)
+	}
+}
+
+// tokenFromSNI extrai o token de "<token>.<host público>".
+func (s *Server) tokenFromSNI(sni string) string {
+	host := strings.ToLower(strings.TrimSuffix(s.opts.PublicHost, "."))
+	if host == "" {
+		return ""
+	}
+	label, ok := strings.CutSuffix(strings.ToLower(sni), "."+host)
+	if !ok || label == "" || strings.Contains(label, ".") {
+		return ""
+	}
+	return label
+}
+
+// answer resolve a pergunta para a origem e devolve a resposta pronta para
+// enviar (nil = não responder). Vale para todos os transportes.
+func (s *Server) answer(r *dns.Msg, o origin) *dns.Msg {
+	ev := Event{Time: time.Now(), Proto: o.proto, Client: o.client}
 	s.total.Add(1)
 
+	// Quem pode perguntar: redes permitidas, ou um aparelho com token válido
+	// (de qualquer lugar).
+	trusted := s.allowed(o.client)
 	var cl *clients.Client
-	if s.opts.Clients != nil && s.allowed(ev.Client) {
-		cl = s.opts.Clients.Observe(ev.Client, ev.Time)
+	if s.opts.Clients != nil {
+		if o.token != "" {
+			if cl = s.opts.Clients.ObserveToken(o.token, ev.Time); cl != nil {
+				trusted = true
+			}
+		}
+		if cl == nil && trusted {
+			cl = s.opts.Clients.Observe(o.client, ev.Time)
+		}
 	}
-	resp := s.handle(r, &ev, cl.Policy())
+	resp := s.handle(r, &ev, cl.Policy(), trusted)
 	if resp != nil {
-		s.write(w, r, resp, ev.Proto)
+		s.finalize(r, resp, o.proto)
 		ev.Rcode = dns.RcodeToString[resp.Rcode]
 	} else {
 		ev.Rcode = "DROP"
-		if ev.Proto == "tcp" {
-			_ = w.Close()
-		}
 	}
 	ev.Duration = time.Since(ev.Time)
 
@@ -212,11 +282,12 @@ func (s *Server) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	if s.opts.OnQuery != nil {
 		s.opts.OnQuery(ev)
 	}
+	return resp
 }
 
 // handle devolve a resposta (sem EDNS; write cuida disso) ou nil para não responder.
-func (s *Server) handle(r *dns.Msg, ev *Event, pol *clients.Policy) *dns.Msg {
-	if !s.allowed(ev.Client) {
+func (s *Server) handle(r *dns.Msg, ev *Event, pol *clients.Policy, trusted bool) *dns.Msg {
+	if !trusted {
 		ev.Status = StatusRefused
 		return reply(r, dns.RcodeRefused)
 	}
@@ -403,9 +474,9 @@ func blockedEDE() dns.RR {
 	return o
 }
 
-// write ajusta a resposta ao pedido do cliente (ID, caixa da pergunta, EDNS,
-// truncamento) e envia.
-func (s *Server) write(w dns.ResponseWriter, r, m *dns.Msg, proto string) {
+// finalize ajusta a resposta ao pedido do cliente (ID, caixa da pergunta,
+// EDNS e truncamento, que só vale no UDP).
+func (s *Server) finalize(r, m *dns.Msg, proto string) {
 	m.Id = r.Id
 	m.Response = true
 	m.Opcode = r.Opcode
@@ -437,14 +508,11 @@ func (s *Server) write(w dns.ResponseWriter, r, m *dns.Msg, proto string) {
 		m.Extra = append(m.Extra, o)
 		size = max(dns.MinMsgSize, min(int(ro.UDPSize()), ednsSize))
 	}
-	if proto == "tcp" {
+	if proto != "udp" {
 		size = dns.MaxMsgSize
 	}
 	m.Compress = true
 	m.Truncate(size)
-	if err := w.WriteMsg(m); err != nil {
-		s.log.Debug("falha ao responder", "erro", err)
-	}
 }
 
 func (s *Server) allowed(a netip.Addr) bool {

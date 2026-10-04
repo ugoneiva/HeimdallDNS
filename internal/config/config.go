@@ -49,7 +49,20 @@ type DNS struct {
 	AllowedNetworks []string `yaml:"allowed_networks"`
 	BlockMode       string   `yaml:"block_mode"`
 	BlockTTL        uint32   `yaml:"block_ttl"`
+
+	// DNS criptografado, para aparelhos dentro e fora da rede.
+	PublicHost   string   `yaml:"public_host"`    // ex.: dns.empresa.com.br
+	DoTListen    []string `yaml:"dot_listen"`     // ex.: [":853"]
+	DoHListen    string   `yaml:"doh_listen"`     // ex.: ":443"
+	DoHPlainHTTP bool     `yaml:"doh_plain_http"` // atrás de proxy reverso que termina o TLS
+	TLSCert      string   `yaml:"tls_cert"`
+	TLSKey       string   `yaml:"tls_key"`
+	ACME         bool     `yaml:"acme"` // certificado automático (Let's Encrypt, TLS-ALPN-01 na 443)
+	ACMEEmail    string   `yaml:"acme_email"`
 }
+
+// EncryptedEnabled diz se DoT ou DoH estão ligados.
+func (d DNS) EncryptedEnabled() bool { return len(d.DoTListen) > 0 || d.DoHListen != "" }
 
 type Upstream struct {
 	Servers        []string      `yaml:"servers"`
@@ -224,6 +237,16 @@ func (c *Config) Validate() error {
 	case BlockNull, BlockNXDomain, BlockRefused, BlockDrop:
 	default:
 		errs = append(errs, fmt.Errorf("clients.isolate_mode %q: use null, nxdomain, refused ou drop", c.Clients.IsolateMode))
+	}
+	if (c.DNS.TLSCert == "") != (c.DNS.TLSKey == "") {
+		errs = append(errs, errors.New("dns.tls_cert e dns.tls_key vão juntos"))
+	}
+	needCert := len(c.DNS.DoTListen) > 0 || (c.DNS.DoHListen != "" && !c.DNS.DoHPlainHTTP)
+	if needCert && c.DNS.TLSCert == "" && !c.DNS.ACME {
+		errs = append(errs, errors.New("dns.dot_listen/doh_listen precisam de dns.tls_cert/tls_key ou dns.acme"))
+	}
+	if c.DNS.ACME && c.DNS.PublicHost == "" {
+		errs = append(errs, errors.New("dns.acme precisa de dns.public_host"))
 	}
 	if (c.API.TLSCert == "") != (c.API.TLSKey == "") {
 		errs = append(errs, errors.New("api.tls_cert e api.tls_key vão juntos"))
