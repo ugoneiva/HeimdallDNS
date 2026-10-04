@@ -30,6 +30,7 @@ import (
 	"github.com/ugoneiva/HeimdallDNS/internal/server"
 	"github.com/ugoneiva/HeimdallDNS/internal/store"
 	"github.com/ugoneiva/HeimdallDNS/internal/upstream"
+	"github.com/ugoneiva/HeimdallDNS/internal/webui"
 )
 
 var version = "dev"
@@ -137,6 +138,9 @@ func runServer() error {
 		Interval: cfg.Filter.UpdateInterval,
 		Logger:   log.With("componente", "filtro"),
 	})
+	if err := api.LoadUserFilter(db, flt); err != nil {
+		return err
+	}
 	flt.Start(ctx)
 
 	reg, err := newRegistry(cfg, db, log.With("componente", "radar"))
@@ -202,21 +206,32 @@ func runServer() error {
 		if err != nil {
 			return fmt.Errorf("api %s: %w", cfg.API.Listen, err)
 		}
+		tls := cfg.API.TLSCert != ""
 		httpSrv = &http.Server{
 			Handler: api.New(api.Deps{
 				Context: ctx, Token: token, Version: version, Started: started,
 				Server: srv, Cache: dnsCache, Upstream: ups, Filter: flt, Clients: reg,
-				Store: db, Log: qlog,
+				Store: db, Log: qlog, UI: webui.FS(), Secure: tls,
 				Logger: log.With("componente", "api"),
 			}),
 			ReadHeaderTimeout: 10 * time.Second,
 		}
 		go func() {
-			if err := httpSrv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			var err error
+			if tls {
+				err = httpSrv.ServeTLS(ln, cfg.API.TLSCert, cfg.API.TLSKey)
+			} else {
+				err = httpSrv.Serve(ln)
+			}
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
 				log.Error("API parou", "erro", err)
 			}
 		}()
-		log.Info("API ouvindo", "endereco", ln.Addr().String())
+		scheme := "http"
+		if tls {
+			scheme = "https"
+		}
+		log.Info("painel e API ouvindo", "endereco", scheme+"://"+ln.Addr().String())
 	}
 
 	// SIGHUP baixa as listas de novo.
@@ -339,6 +354,7 @@ Comandos:
   rules   <ref> [-deny r1,r2] [-allow r1,r2] [-global=false]
   forget  <ref>                     esquece o dispositivo
   services                          serviços para regras (service:tiktok, service:social…)
+  passwd                            define uma nova senha do painel (recupera o acesso)
 
 <ref> é o id, IP, MAC ou nome do dispositivo.
 

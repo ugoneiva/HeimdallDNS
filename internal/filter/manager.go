@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -20,29 +21,36 @@ import (
 
 const maxListSize = 64 << 20 // 64 MiB por lista
 
-// ListSpec descreve uma lista de bloqueio configurada.
+// ListSpec descreve uma lista de bloqueio. Fixed = veio do arquivo de
+// configuração (não pode ser alterada pela interface); as demais têm ID no banco.
 type ListSpec struct {
+	ID      int64
 	Name    string
 	URL     string
 	Enabled bool
+	Fixed   bool
 }
+
+func (l ListSpec) key() string { return fmt.Sprintf("%t|%d|%s", l.Fixed, l.ID, l.URL) }
 
 // ListStatus é o estado de uma lista, para a API e o dashboard.
 type ListStatus struct {
+	ID        int64     `json:"id,omitempty"`
 	Name      string    `json:"name"`
 	URL       string    `json:"url"`
 	Enabled   bool      `json:"enabled"`
+	Fixed     bool      `json:"fixed"`
 	Rules     int       `json:"rules"`
 	Invalid   int       `json:"invalid"`
-	UpdatedAt time.Time `json:"updated_at"` // última cópia baixada com sucesso
+	UpdatedAt time.Time `json:"updated_at,omitzero"` // última cópia baixada com sucesso
 	Error     string    `json:"error,omitempty"`
 }
 
 type ManagerOptions struct {
-	Lists    []ListSpec
-	Allow    []string // regras próprias de exceção
-	Deny     []string // regras próprias de bloqueio
-	CacheDir string   // onde ficam as cópias baixadas
+	Lists    []ListSpec // do arquivo de configuração
+	Allow    []string   // regras próprias do arquivo de configuração
+	Deny     []string
+	CacheDir string // onde ficam as cópias baixadas
 	Interval time.Duration
 	Logger   *slog.Logger
 }
@@ -55,35 +63,86 @@ type Manager struct {
 
 	cur atomic.Pointer[Matcher]
 
-	refreshMu sync.Mutex // um Refresh por vez
-	mu        sync.Mutex
-	status    []ListStatus
+	refreshMu sync.Mutex // um Refresh/Apply por vez
+	mu        sync.Mutex // protege os campos abaixo
+	userLists []ListSpec
+	userAllow []string
+	userDeny  []string
+	status    map[string]*ListStatus
 }
 
 func NewManager(opts ManagerOptions) *Manager {
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
 	}
-	m := &Manager{
+	for i := range opts.Lists {
+		opts.Lists[i].Fixed = true
+	}
+	return &Manager{
 		opts:   opts,
 		client: &http.Client{Timeout: 2 * time.Minute},
 		log:    opts.Logger,
+		status: map[string]*ListStatus{},
 	}
-	m.status = make([]ListStatus, len(opts.Lists))
-	for i, l := range opts.Lists {
-		m.status[i] = ListStatus{Name: l.Name, URL: l.URL, Enabled: l.Enabled}
-	}
-	return m
 }
 
 // Matcher devolve o conjunto de regras em uso (nunca nil depois de Start).
 func (m *Manager) Matcher() *Matcher { return m.cur.Load() }
 
-// Status devolve uma cópia do estado das listas.
-func (m *Manager) Status() []ListStatus {
+// lists devolve as listas do arquivo seguidas das da interface.
+func (m *Manager) lists() []ListSpec {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return append([]ListStatus(nil), m.status...)
+	return append(slices.Clone(m.opts.Lists), m.userLists...)
+}
+
+// Status devolve o estado de todas as listas, na ordem em que são aplicadas.
+func (m *Manager) Status() []ListStatus {
+	ls := m.lists()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]ListStatus, len(ls))
+	for i, l := range ls {
+		st := ListStatus{ID: l.ID, Name: l.Name, URL: l.URL, Enabled: l.Enabled, Fixed: l.Fixed}
+		if s := m.status[l.key()]; s != nil {
+			st.Rules, st.Invalid, st.UpdatedAt, st.Error = s.Rules, s.Invalid, s.UpdatedAt, s.Error
+		}
+		if !l.Enabled {
+			st.Rules, st.Invalid = 0, 0
+		}
+		out[i] = st
+	}
+	return out
+}
+
+// UserRules devolve as regras próprias: as do arquivo (só leitura) e as da interface.
+func (m *Manager) UserRules() (cfgAllow, cfgDeny, allow, deny []string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return slices.Clone(m.opts.Allow), slices.Clone(m.opts.Deny), slices.Clone(m.userAllow), slices.Clone(m.userDeny)
+}
+
+// SetUser troca as listas e regras definidas pela interface. Elas passam a
+// valer no próximo Apply (ou Start).
+func (m *Manager) SetUser(lists []ListSpec, allow, deny []string) {
+	m.mu.Lock()
+	m.userLists = slices.Clone(lists)
+	m.userAllow, m.userDeny = slices.Clone(allow), slices.Clone(deny)
+	m.mu.Unlock()
+}
+
+// Apply baixa as listas habilitadas que ainda não têm cópia local e remonta as regras.
+func (m *Manager) Apply(ctx context.Context) {
+	m.refreshMu.Lock()
+	defer m.refreshMu.Unlock()
+	for _, l := range m.lists() {
+		if l.Enabled && isRemote(l.URL) {
+			if _, err := os.Stat(m.cachePath(l.URL)); err != nil {
+				m.fetch(ctx, l)
+			}
+		}
+	}
+	m.rebuild()
 }
 
 // Start carrega as cópias locais (início rápido, sem rede), depois baixa as
@@ -113,50 +172,65 @@ func (m *Manager) Start(ctx context.Context) {
 func (m *Manager) Refresh(ctx context.Context) {
 	m.refreshMu.Lock()
 	defer m.refreshMu.Unlock()
-	for i, l := range m.opts.Lists {
-		if !l.Enabled || !isRemote(l.URL) {
-			continue
+	for _, l := range m.lists() {
+		if l.Enabled && isRemote(l.URL) {
+			m.fetch(ctx, l)
 		}
-		err := m.download(ctx, l.URL)
-		m.mu.Lock()
-		if err != nil {
-			m.status[i].Error = err.Error()
-			m.log.Warn("falha ao baixar lista", "lista", l.Name, "erro", err)
-		} else {
-			m.status[i].Error = ""
-		}
-		m.mu.Unlock()
 	}
 	if ctx.Err() == nil {
 		m.rebuild()
 	}
 }
 
+func (m *Manager) fetch(ctx context.Context, l ListSpec) {
+	err := m.download(ctx, l.URL)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	st := m.statusLocked(l)
+	if err != nil {
+		st.Error = err.Error()
+		m.log.Warn("falha ao baixar lista", "lista", l.Name, "erro", err)
+		return
+	}
+	st.Error = ""
+}
+
+func (m *Manager) statusLocked(l ListSpec) *ListStatus {
+	st := m.status[l.key()]
+	if st == nil {
+		st = &ListStatus{}
+		m.status[l.key()] = st
+	}
+	return st
+}
+
 func (m *Manager) rebuild() {
 	start := time.Now()
+	cfgAllow, cfgDeny, allow, deny := m.UserRules()
 	b := NewBuilder()
-	for _, r := range b.AddUserRules(m.opts.Allow, m.opts.Deny) {
+	for _, r := range b.AddUserRules(append(cfgAllow, allow...), append(cfgDeny, deny...)) {
 		m.log.Warn("regra própria inválida", "regra", r)
 	}
-	for i, l := range m.opts.Lists {
+	for _, l := range m.lists() {
 		if !l.Enabled {
 			continue
 		}
 		st, mod, err := m.readList(l.URL, b)
 		m.mu.Lock()
+		s := m.statusLocked(l)
 		switch {
 		case err != nil && !errors.Is(err, os.ErrNotExist):
-			m.status[i].Error = err.Error()
+			s.Error = err.Error()
 			m.log.Warn("falha ao ler lista", "lista", l.Name, "erro", err)
 		case err == nil:
-			m.status[i].Rules, m.status[i].Invalid, m.status[i].UpdatedAt = st.Rules, st.Invalid, mod
+			s.Rules, s.Invalid, s.UpdatedAt = st.Rules, st.Invalid, mod
 		}
 		m.mu.Unlock()
 	}
 	mt := b.Build()
 	m.cur.Store(mt)
-	block, allow := mt.Rules()
-	m.log.Info("regras carregadas", "bloqueio", block, "excecoes", allow, "tempo", time.Since(start).Round(time.Millisecond))
+	block, exc := mt.Rules()
+	m.log.Info("regras carregadas", "bloqueio", block, "excecoes", exc, "tempo", time.Since(start).Round(time.Millisecond))
 }
 
 func (m *Manager) readList(src string, b *Builder) (ListStats, time.Time, error) {

@@ -2,12 +2,14 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -15,13 +17,15 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"golang.org/x/term"
+
 	"github.com/ugoneiva/HeimdallDNS/internal/clients"
 	"github.com/ugoneiva/HeimdallDNS/internal/filter"
 )
 
 var commands = map[string]bool{
 	"status": true, "clients": true, "client": true, "name": true, "isolate": true,
-	"release": true, "rules": true, "forget": true, "services": true,
+	"release": true, "rules": true, "forget": true, "services": true, "passwd": true,
 }
 
 func isCommand(s string) bool { return commands[s] }
@@ -124,6 +128,16 @@ func runCLI(cmd string, args []string) error {
 		}
 		fmt.Println("dispositivo esquecido")
 		return nil
+	case "passwd":
+		pw, err := readNewPassword()
+		if err != nil {
+			return err
+		}
+		if err := c.do("POST", "/api/auth/password", map[string]string{"password": pw}, nil); err != nil {
+			return err
+		}
+		fmt.Println("senha do painel alterada; as sessões abertas foram encerradas")
+		return nil
 	case "services":
 		var out struct {
 			Services []filter.Service `json:"services"`
@@ -171,6 +185,9 @@ func newCLI(cfgPath string, explicit bool, apiURL, token string) (*cli, error) {
 			host = "127.0.0.1:" + host[strings.LastIndexByte(host, ':')+1:]
 		}
 		apiURL = "http://" + host
+		if cfg.API.TLSCert != "" {
+			apiURL = "https://" + host
+		}
 	}
 	if token == "" {
 		token = cfg.API.Token
@@ -182,7 +199,15 @@ func newCLI(cfgPath string, explicit bool, apiURL, token string) (*cli, error) {
 		}
 		token = strings.TrimSpace(string(b))
 	}
-	return &cli{base: strings.TrimSuffix(apiURL, "/"), token: token, http: &http.Client{Timeout: 10 * time.Second}}, nil
+	hc := &http.Client{Timeout: 10 * time.Second}
+	// No próprio servidor, aceita o certificado autoassinado (o nome dele
+	// raramente é 127.0.0.1); fora do loopback, valida normalmente.
+	if u, err := url.Parse(apiURL); err == nil && u.Scheme == "https" {
+		if ip, err := netip.ParseAddr(u.Hostname()); (err == nil && ip.IsLoopback()) || u.Hostname() == "localhost" {
+			hc.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
+		}
+	}
+	return &cli{base: strings.TrimSuffix(apiURL, "/"), token: token, http: hc}, nil
 }
 
 func (c *cli) do(method, path string, body, out any) error {
@@ -345,4 +370,29 @@ func printJSON(v any) error {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(v)
+}
+
+// readNewPassword pede a senha duas vezes sem mostrar no terminal.
+func readNewPassword() (string, error) {
+	fd := int(os.Stdin.Fd())
+	if !term.IsTerminal(fd) {
+		b, err := io.ReadAll(io.LimitReader(os.Stdin, 1024))
+		return strings.TrimRight(string(b), "\r\n"), err
+	}
+	fmt.Fprint(os.Stderr, "Nova senha do painel: ")
+	a, err := term.ReadPassword(fd)
+	fmt.Fprintln(os.Stderr)
+	if err != nil {
+		return "", err
+	}
+	fmt.Fprint(os.Stderr, "Repita a senha: ")
+	b, err := term.ReadPassword(fd)
+	fmt.Fprintln(os.Stderr)
+	if err != nil {
+		return "", err
+	}
+	if string(a) != string(b) {
+		return "", errors.New("as senhas não conferem")
+	}
+	return string(a), nil
 }

@@ -68,6 +68,25 @@ var migrations = []string{
 		count   INTEGER NOT NULL,
 		PRIMARY KEY (hour, blocked, name)
 	) WITHOUT ROWID;`,
+
+	`CREATE TABLE settings (
+		key   TEXT PRIMARY KEY,
+		value TEXT NOT NULL
+	) WITHOUT ROWID;
+
+	CREATE TABLE blocklists (
+		id      INTEGER PRIMARY KEY,
+		name    TEXT NOT NULL,
+		url     TEXT NOT NULL UNIQUE,
+		enabled INTEGER NOT NULL DEFAULT 1,
+		created INTEGER NOT NULL
+	);
+
+	CREATE TABLE sessions (
+		token_hash TEXT PRIMARY KEY, -- SHA-256 do cookie; o cookie em si não fica no banco
+		created    INTEGER NOT NULL,
+		expires    INTEGER NOT NULL
+	) WITHOUT ROWID;`,
 }
 
 type Store struct {

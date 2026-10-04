@@ -96,6 +96,9 @@ type API struct {
 	Listen string `yaml:"listen"` // "" desliga
 	// Token de acesso. Vazio = gerado em <data_dir>/api.token na primeira vez.
 	Token string `yaml:"token"`
+	// HTTPS para o painel e a API (recomendado fora do localhost).
+	TLSCert string `yaml:"tls_cert"`
+	TLSKey  string `yaml:"tls_key"`
 }
 
 type History struct {
@@ -194,6 +197,9 @@ func (c *Config) Validate() error {
 	case BlockNull, BlockNXDomain, BlockRefused, BlockDrop:
 	default:
 		errs = append(errs, fmt.Errorf("clients.isolate_mode %q: use null, nxdomain, refused ou drop", c.Clients.IsolateMode))
+	}
+	if (c.API.TLSCert == "") != (c.API.TLSKey == "") {
+		errs = append(errs, errors.New("api.tls_cert e api.tls_key vão juntos"))
 	}
 	if c.History.Retention <= 0 || c.History.StatsRetention <= 0 {
 		errs = append(errs, errors.New("history.retention e history.stats_retention devem ser positivos"))

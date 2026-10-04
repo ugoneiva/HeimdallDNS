@@ -1,15 +1,17 @@
-// Package api expõe o controle do HeimdallDNS por HTTP/JSON. Toda rota exige
-// o token (cabeçalho "Authorization: Bearer <token>").
+// Package api expõe o controle do HeimdallDNS por HTTP/JSON e serve o painel.
+// As rotas /api exigem o token (cabeçalho "Authorization: Bearer <token>") ou
+// a sessão do painel; só as de login e o próprio painel são públicos.
 package api
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ugoneiva/HeimdallDNS/internal/cache"
@@ -33,55 +35,76 @@ type Deps struct {
 	Clients  *clients.Registry
 	Store    *store.Store
 	Log      *querylog.Recorder
+	UI       fs.FS // arquivos do painel; nil = sem painel
+	Secure   bool  // HTTPS: o cookie de sessão leva a marca Secure
 	Logger   *slog.Logger
 }
 
-type api struct{ Deps }
+type api struct {
+	Deps
+	guard     guard
+	setupMu   sync.Mutex
+	setupCode string // código para definir a senha na primeira abertura
+}
 
 func New(d Deps) http.Handler {
+	_, h := build(d)
+	return h
+}
+
+func build(d Deps) (*api, http.Handler) {
 	if d.Logger == nil {
 		d.Logger = slog.Default()
 	}
 	if d.Context == nil {
 		d.Context = context.Background()
 	}
-	a := &api{d}
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/status", a.status)
-	mux.HandleFunc("GET /api/clients", a.listClients)
-	mux.HandleFunc("GET /api/clients/{ref}", a.getClient)
-	mux.HandleFunc("PATCH /api/clients/{ref}", a.patchClient)
-	mux.HandleFunc("DELETE /api/clients/{ref}", a.forgetClient)
-	mux.HandleFunc("POST /api/clients/{ref}/isolate", a.isolate)
-	mux.HandleFunc("POST /api/clients/{ref}/release", a.release)
-	mux.HandleFunc("GET /api/services", a.services)
-	mux.HandleFunc("GET /api/lists", a.lists)
-	mux.HandleFunc("POST /api/lists/refresh", a.refreshLists)
-	mux.HandleFunc("GET /api/queries", a.queries)
-	mux.HandleFunc("GET /api/queries/live", a.liveQueries)
-	mux.HandleFunc("GET /api/stats/summary", a.summary)
-	mux.HandleFunc("GET /api/stats/timeseries", a.timeseries)
-	mux.HandleFunc("GET /api/stats/top", a.top)
-	mux.HandleFunc("GET /api/stats/realtime", a.realtime)
-	mux.HandleFunc("GET /api/stats/live", a.liveStats)
-	return a.auth(mux)
-}
+	a := &api{Deps: d, guard: guard{fails: map[string]*failure{}}}
+	if d.Store != nil {
+		if h, err := a.passwordHash(); err == nil && h == "" {
+			a.setupCode = newSetupCode()
+			a.Logger.Warn("painel sem senha: abra o painel e informe este código para definir a senha",
+				"codigo", a.setupCode)
+		}
+	}
 
-func (a *api) auth(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		// O EventSource do navegador não manda cabeçalhos: nas rotas ao vivo
-		// o token pode vir na URL.
-		if !ok && r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/live") {
-			tok = r.URL.Query().Get("token")
-			ok = tok != ""
-		}
-		if !ok || a.Token == "" || subtle.ConstantTimeCompare([]byte(tok), []byte(a.Token)) != 1 {
-			writeErr(w, http.StatusUnauthorized, errors.New("token ausente ou inválido"))
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+	api := http.NewServeMux()
+	api.HandleFunc("GET /api/status", a.status)
+	api.HandleFunc("GET /api/clients", a.listClients)
+	api.HandleFunc("GET /api/clients/{ref}", a.getClient)
+	api.HandleFunc("PATCH /api/clients/{ref}", a.patchClient)
+	api.HandleFunc("DELETE /api/clients/{ref}", a.forgetClient)
+	api.HandleFunc("POST /api/clients/{ref}/isolate", a.isolate)
+	api.HandleFunc("POST /api/clients/{ref}/release", a.release)
+	api.HandleFunc("GET /api/services", a.services)
+	api.HandleFunc("GET /api/lists", a.lists)
+	api.HandleFunc("POST /api/lists", a.addList)
+	api.HandleFunc("PATCH /api/lists/{id}", a.patchList)
+	api.HandleFunc("DELETE /api/lists/{id}", a.deleteList)
+	api.HandleFunc("POST /api/lists/refresh", a.refreshLists)
+	api.HandleFunc("GET /api/rules", a.getRules)
+	api.HandleFunc("PUT /api/rules", a.putRules)
+	api.HandleFunc("POST /api/rules/quick", a.quickRule)
+	api.HandleFunc("GET /api/filter/test", a.testDomain)
+	api.HandleFunc("GET /api/queries", a.queries)
+	api.HandleFunc("GET /api/queries/live", a.liveQueries)
+	api.HandleFunc("GET /api/stats/summary", a.summary)
+	api.HandleFunc("GET /api/stats/timeseries", a.timeseries)
+	api.HandleFunc("GET /api/stats/top", a.top)
+	api.HandleFunc("GET /api/stats/realtime", a.realtime)
+	api.HandleFunc("GET /api/stats/live", a.liveStats)
+	api.HandleFunc("POST /api/auth/password", a.changePassword)
+
+	root := http.NewServeMux()
+	root.HandleFunc("GET /api/auth/state", a.authState)
+	root.HandleFunc("POST /api/auth/setup", a.setup)
+	root.HandleFunc("POST /api/auth/login", a.login)
+	root.HandleFunc("POST /api/auth/logout", a.logout)
+	root.Handle("/api/", a.requireAuth(api))
+	if d.UI != nil {
+		root.Handle("/", uiHandler(d.UI))
+	}
+	return a, root
 }
 
 func (a *api) status(w http.ResponseWriter, _ *http.Request) {
