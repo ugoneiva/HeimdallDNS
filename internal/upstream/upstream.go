@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 // Package upstream encaminha as consultas para os resolvedores externos
 // (DNS comum, DoH, DoT, DoQ), mede a latência de cada um e escolhe o melhor.
 package upstream

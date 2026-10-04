@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 // Package filter decide se um domínio deve ser bloqueado, a partir das listas
 // de bloqueio e das regras próprias.
 package filter

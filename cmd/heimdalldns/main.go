@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 // Comando heimdalldns: servidor DNS com filtro e radar de dispositivos.
 // Sem subcomando, roda o servidor; com subcomando (clients, isolate…),
 // conversa com um servidor em execução pela API.

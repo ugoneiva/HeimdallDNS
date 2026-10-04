@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 // Package console é o painel de MSP: acompanha vários HeimdallDNS (um por
 // cliente) pela API de cada um e junta status e alertas num lugar só.
 //

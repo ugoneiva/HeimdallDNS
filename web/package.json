@@ -28,5 +28,5 @@
     "typescript": "^7.0.2",
     "vite": "^8.3.2"
   },
-  "license": "MIT"
+  "license": "AGPL-3.0-or-later"
 }

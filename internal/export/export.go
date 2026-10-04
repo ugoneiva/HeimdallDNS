@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 // Package export manda alertas de segurança (e, se pedido, as consultas) para
 // um SIEM: arquivo JSON por linha (lido pelo agente do Wazuh) e/ou syslog.
 //

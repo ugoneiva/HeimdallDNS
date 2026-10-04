@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 // Tradução do painel para o inglês. A chave é o texto em português, exatamente
 // como aparece no código (t('…')). "npm run i18n" lista o que falta.
 export const en: Record<string, string> = {
@@ -252,6 +255,7 @@ export const en: Record<string, string> = {
   "código de configuração inválido (veja o log do serviço)": "invalid setup code (see the service log)",
   "código de verificação inválido": "invalid verification code",
   "Código do aplicativo autenticador": "Authenticator app code",
+  "código-fonte": "source code",
   "Cópias automáticas no servidor": "Automatic copies on the server",
   "de": "of",
   "Definida no arquivo de configuração": "Set in the configuration file",

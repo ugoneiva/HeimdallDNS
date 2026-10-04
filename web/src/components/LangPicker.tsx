@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 import { Languages } from 'lucide-react'
 import { lang, setLang, t } from '../lib/i18n'
 import { Segmented } from './ui'

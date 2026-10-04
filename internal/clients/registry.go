@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 // Package clients é o radar de dispositivos: registra cada IP que consulta o
 // DNS, descobre MAC, fabricante e nome, e guarda a política de cada cliente
 // (isolamento e regras próprias).

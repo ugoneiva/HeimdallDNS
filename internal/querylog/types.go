@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 // Package querylog guarda o histórico de consultas: linhas detalhadas (com
 // retenção curta), resumos por minuto e por hora (retenção longa), o log ao
 // vivo e o tráfego por segundo.

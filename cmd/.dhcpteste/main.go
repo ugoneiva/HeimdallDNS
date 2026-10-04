@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 // Cliente DHCP de teste: pede uma concessão na interface e imprime o resultado.
 package main
 

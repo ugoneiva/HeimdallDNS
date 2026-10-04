@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import QRCode from 'qrcode'
@@ -14,6 +17,7 @@ import { TokensCard, UsersCard } from './Access'
 import { AuditTab } from './ActiveDirectory'
 import { roleLabel, useAuth, useCan } from '../lib/auth'
 import { LangPicker } from '../components/LangPicker'
+import { AboutLine } from '../components/About'
 import { t } from '../lib/i18n'
 
 export function Settings({ onLogout }: { onLogout: () => void }) {
@@ -66,6 +70,7 @@ export function Settings({ onLogout }: { onLogout: () => void }) {
         ) : (
           <p className="text-xs text-muted">{t('Carregando…')}</p>
         )}
+              {s && <AboutLine version={s.version} className="mt-4 text-[11px] text-muted" />}
       </Card>
 
       {admin && (

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 import { Component, type ReactNode } from 'react'
 import { t } from '../lib/i18n'
 import { Button } from './ui'

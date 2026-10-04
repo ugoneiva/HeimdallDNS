@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 import { useEffect, useState, useSyncExternalStore } from 'react'
 
 export type ThemeChoice = 'dark' | 'light' | 'auto'

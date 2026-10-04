@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 /** Marca do HeimdallDNS: escudo com o "olho" do guardião. */
 export function Logo({ className }: { className?: string }) {
   return (

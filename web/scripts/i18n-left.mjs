@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 // Lista textos em português ainda fora de t('…') (para revisão).
 import { readFileSync } from 'node:fs'
 import { parseAst } from 'rolldown/parseAst'

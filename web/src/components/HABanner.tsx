@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 import { useQuery } from '@tanstack/react-query'
 import { CircleAlert, Copy } from 'lucide-react'
 import { api } from '../api'

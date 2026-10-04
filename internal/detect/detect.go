@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 // Package detect procura sinais de comprometimento no tráfego DNS: DGA
 // (malware procurando o servidor de comando), túnel DNS (exfiltração) e
 // acessos bloqueados por listas de ameaças.

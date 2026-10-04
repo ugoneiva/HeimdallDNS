@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 // Package ha replica a configuração entre nós do HeimdallDNS: um principal e
 // uma ou mais réplicas. A réplica faz long-poll no principal, então uma
 // mudança (um isolamento, por exemplo) chega nela em cerca de um segundo.

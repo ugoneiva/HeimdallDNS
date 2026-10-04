@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 // Package server atende as consultas DNS: controle de acesso, registros
 // locais, filtro, cache e encaminhamento para os upstreams.
 package server

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 import { useEffect, useState, type ComponentType } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { BookUser, Gauge, Globe, ListFilter, Network, Radar as RadarIcon, ScrollText, Settings as SettingsIcon, ShieldAlert } from 'lucide-react'
@@ -6,6 +9,7 @@ import type { AuthState } from './types'
 import { cx } from './components/ui'
 import { Logo } from './components/Logo'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { AboutLine } from './components/About'
 import { HABanner } from './components/HABanner'
 import { Login } from './pages/Login'
 import { Overview } from './pages/Overview'
@@ -158,7 +162,7 @@ function Shell({ version, onLogout }: { version: string; onLogout: () => void })
             )
           })}
         </nav>
-        <p className="absolute bottom-4 left-5 hidden text-[11px] text-muted lg:block">{t('versão')}{' '}{version}</p>
+        <AboutLine version={version} className="absolute right-5 bottom-4 left-5 hidden text-[11px] leading-relaxed text-muted lg:block" />
       </aside>
 
       <main className="relative min-w-0">

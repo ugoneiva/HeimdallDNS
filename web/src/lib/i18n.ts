@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 // Idioma do painel. O texto em português é a chave: t('Salvar') devolve a
 // tradução do idioma escolhido ou, se faltar, o próprio português (nunca uma
 // chave crua). Trocar o idioma recarrega a página, então t() é uma função

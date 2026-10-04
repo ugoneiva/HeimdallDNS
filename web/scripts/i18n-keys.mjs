@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 // Lista as chaves de t('…') e, com --missing, só as que faltam em i18n/en.ts.
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'

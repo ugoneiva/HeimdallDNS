@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 // Package nrd descobre a data de registro dos domínios consultados (via RDAP,
 // direto no registro de cada TLD) e avisa ou bloqueia os registrados há poucos
 // dias, uma marca comum de phishing e de infraestrutura de malware.

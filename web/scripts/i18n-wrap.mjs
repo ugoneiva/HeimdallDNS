@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 // Marca os textos do painel com t('…') (uso único na criação do i18n; fica
 // para os arquivos novos). Uso: node scripts/i18n-wrap.mjs src/pages/X.tsx …
 // Só mexe em: texto de JSX, atributos de texto e textos em condicionais

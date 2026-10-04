@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 import { useEffect, useId, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react'
 import { CircleAlert, CircleCheck, LoaderCircle, TriangleAlert, X } from 'lucide-react'
 import { t, tServer } from '../lib/i18n'

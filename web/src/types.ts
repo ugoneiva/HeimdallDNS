@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 // Tipos espelhando as respostas da API do HeimdallDNS.
 
 export type Counts = {

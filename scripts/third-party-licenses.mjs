@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 // Gera THIRD_PARTY_LICENSES.md com as licenças de tudo o que vai embutido no
 // binário: as bibliotecas Go e as do painel (só as de produção).
 // Uso: node scripts/third-party-licenses.mjs  (precisa de "npm ci" em web/)
@@ -9,7 +12,7 @@ const licenseFile = (dir) =>
   readdirSync(dir).find((f) => /^(licen[cs]e|copying)(\.(md|txt))?$/i.test(f) || /^licen[cs]e-mit/i.test(f))
 
 const out = ['# Licenças de terceiros', '',
-  'O HeimdallDNS é distribuído sob a licença MIT (arquivo LICENSE). O binário inclui as bibliotecas abaixo, cada uma com a licença própria.', '']
+  'O HeimdallDNS (Copyright (C) 2026 JLW Security) é distribuído sob a GNU AGPL-3.0-or-later (arquivo LICENSE). O binário inclui as bibliotecas abaixo, cada uma com a licença própria, todas compatíveis com a AGPL.', '']
 
 // Go: só os módulos usados pelo binário.
 const goMods = execFileSync('go', ['list', '-deps', '-f', '{{if .Module}}{{.Module.Path}}\t{{.Module.Version}}\t{{.Module.Dir}}{{end}}', './cmd/heimdalldns'], { encoding: 'utf8' })

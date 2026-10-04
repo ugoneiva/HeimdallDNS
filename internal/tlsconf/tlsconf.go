@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 // Package tlsconf monta a configuração TLS do DNS criptografado (DoT/DoH):
 // certificado em arquivo (recarregado quando o certbot renova) ou emitido
 // automaticamente pelo Let's Encrypt (ACME, desafio TLS-ALPN-01 na porta 443).

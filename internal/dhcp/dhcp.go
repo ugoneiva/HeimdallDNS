@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 // Package dhcp é um servidor DHCPv4 opcional. Além de entregar endereços,
 // ele alimenta o radar (MAC e nome de cada aparelho direto da concessão) e o
 // DNS local (<nome>.<domínio> e o reverso resolvem sozinhos).

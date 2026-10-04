@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 import { useState, type ComponentType } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Building2, CircleCheck, FileStack, ExternalLink, LogOut, Monitor, Moon, Plus, ShieldAlert, Sun, Trash } from 'lucide-react'
@@ -11,6 +14,7 @@ import { SeverityBadge } from './Security'
 import { PasswordForm } from './Settings'
 import { ConsoleTemplates } from './ConsoleTemplates'
 import { LangPicker } from '../components/LangPicker'
+import { AboutLine } from '../components/About'
 import { t } from '../lib/i18n'
 
 type Page = 'tenants' | 'alerts' | 'templates' | 'settings'
@@ -68,7 +72,7 @@ export function ConsoleApp({ version, onLogout }: { version: string; onLogout: (
             )
           })}
         </nav>
-        <p className="absolute bottom-4 left-5 hidden text-[11px] text-muted lg:block">{t('versão')}{' '}{version}</p>
+        <AboutLine version={version} className="absolute right-5 bottom-4 left-5 hidden text-[11px] leading-relaxed text-muted lg:block" />
       </aside>
       <main className="relative min-w-0">
         <div className="bg-grid pointer-events-none absolute inset-x-0 top-0 h-64" aria-hidden />

@@ -63,7 +63,7 @@ nfpms:
       Servidor DNS com filtro (estilo Pi-hole), radar de dispositivos,
       isolamento por aparelho, detecção de DGA/túnel, DoH/DoT, DHCP,
       alta disponibilidade e integração com o Active Directory.
-    license: MIT
+    license: AGPL-3.0-or-later
     section: net
     priority: optional
     formats: [deb, rpm, archlinux]
@@ -112,7 +112,8 @@ dockers_v2:
     platforms: [linux/amd64, linux/arm64, linux/arm/v7]
     labels:
       org.opencontainers.image.title: HeimdallDNS
-      org.opencontainers.image.licenses: MIT
+      org.opencontainers.image.licenses: AGPL-3.0-or-later
+      org.opencontainers.image.vendor: JLW Security
       org.opencontainers.image.source: https://github.com/ugoneiva/HeimdallDNS
       org.opencontainers.image.version: "{{ .Version }}"
       org.opencontainers.image.revision: "{{ .FullCommit }}"

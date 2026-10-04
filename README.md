@@ -529,6 +529,16 @@ O painel compilado vai no repositório, então `make build` (ou `go install`) fu
 
 ## Licença
 
-O HeimdallDNS é software livre, sob a [licença MIT](LICENSE): pode usar, copiar, modificar, distribuir e vender, inclusive em produtos fechados, desde que mantenha o aviso de autoria.
+Copyright (C) 2026 JLW Security.
 
-As bibliotecas embutidas no binário (Go e o painel) são todas de licenças abertas e compatíveis (BSD, MIT, Apache-2.0, ISC, Unlicense). Os textos delas estão em [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md), que vai junto em todos os pacotes. Depois de mudar dependências, rode `make licenses`.
+O HeimdallDNS é software livre, sob a **[GNU Affero General Public License v3.0 ou posterior](LICENSE)** (AGPL-3.0-or-later):
+
+- qualquer pessoa pode usar, estudar, modificar e redistribuir, inclusive comercialmente;
+- quem distribuir o HeimdallDNS, modificado ou não, tem que entregar o código-fonte sob a mesma licença;
+- **quem modificar e oferecer o serviço pela rede** (por exemplo, um MSP operando o painel para clientes) também tem que oferecer o código das modificações a quem usa. É essa cláusula que impede uma versão fechada, mesmo vendida só como serviço.
+
+O painel mostra a licença e o link do código-fonte no rodapé do menu lateral, como a AGPL pede.
+
+As bibliotecas embutidas no binário (Go e o painel) são todas de licenças abertas e compatíveis com a AGPL (BSD, MIT, Apache-2.0, ISC, Unlicense). Os textos delas estão em [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md), que vai junto em todos os pacotes. Depois de mudar dependências, rode `make licenses`.
+
+Cada arquivo de código leva o cabeçalho `SPDX-License-Identifier: AGPL-3.0-or-later`.

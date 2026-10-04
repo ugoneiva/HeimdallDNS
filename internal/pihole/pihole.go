@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 // Package pihole lê o backup do Pi-hole (Teleporter) para migrar listas,
 // regras, registros locais, reservas de DHCP, upstreams e nomes de clientes.
 //

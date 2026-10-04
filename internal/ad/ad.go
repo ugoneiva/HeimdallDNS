@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 // Package ad integra o HeimdallDNS ao Active Directory por LDAPS: consulta
 // usuários, grupos e computadores e, se liberado, cria e altera usuários,
 // grupos e registros DNS integrados ao AD.

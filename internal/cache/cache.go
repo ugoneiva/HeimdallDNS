@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 // Package cache guarda respostas DNS em memória (LRU), respeitando o TTL de
 // cada registro, com cache negativo (RFC 2308) e resposta vencida enquanto
 // renova (serve-stale, RFC 8767).

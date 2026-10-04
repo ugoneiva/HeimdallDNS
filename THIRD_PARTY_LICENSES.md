@@ -1,6 +1,6 @@
 # Licenças de terceiros
 
-O HeimdallDNS é distribuído sob a licença MIT (arquivo LICENSE). O binário inclui as bibliotecas abaixo, cada uma com a licença própria.
+O HeimdallDNS (Copyright (C) 2026 JLW Security) é distribuído sob a GNU AGPL-3.0-or-later (arquivo LICENSE). O binário inclui as bibliotecas abaixo, cada uma com a licença própria, todas compatíveis com a AGPL.
 
 ## @reduxjs/toolkit 2.13.0
 

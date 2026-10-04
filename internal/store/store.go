@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 // Package store guarda os dados do HeimdallDNS em SQLite (driver em Go puro,
 // sem CGO, para compilar para ARM sem dor).
 package store

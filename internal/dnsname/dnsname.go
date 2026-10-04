@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 // Package dnsname separa um nome DNS no domínio registrável (o que alguém
 // registrou num registro, como exemplo.com.br) e no resto (os subdomínios).
 package dnsname

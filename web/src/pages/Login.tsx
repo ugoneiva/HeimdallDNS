@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { KeyRound } from 'lucide-react'

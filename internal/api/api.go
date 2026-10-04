@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 // Package api expõe o controle do HeimdallDNS por HTTP/JSON e serve o painel.
 // As rotas /api exigem o token (cabeçalho "Authorization: Bearer <token>") ou
 // a sessão do painel; só as de login e o próprio painel são públicos.

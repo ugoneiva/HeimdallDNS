@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 JLW Security
+
 // Package backup gera e restaura cópias do HeimdallDNS: um .tar.gz com o
 // banco, a configuração e um manifesto; com senha, o arquivo inteiro é
 // cifrado no formato age (scrypt + ChaCha20-Poly1305), que também abre com a
