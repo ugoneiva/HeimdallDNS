@@ -2,7 +2,7 @@
 
 Servidor DNS com filtro de bloqueio, no estilo do Pi-hole, escrito em Go, com funções mais avançadas: radar de dispositivos, isolamento por cliente e dashboard em tempo real.
 
-> **Estado:** em desenvolvimento. O motor DNS, o radar de dispositivos, o histórico e o log ao vivo estão prontos; o dashboard vem a seguir.
+> **Estado:** em desenvolvimento. MVP completo: motor DNS, radar de dispositivos, histórico, log ao vivo e painel web.
 
 ## O que já funciona
 
@@ -57,6 +57,41 @@ Servidor DNS com filtro de bloqueio, no estilo do Pi-hole, escrito em Go, com fu
   - log ao vivo com filtros por dispositivo, status, tipo e texto, que descarta o excedente para um navegador lento em vez de atrasar o DNS;
   - tráfego segundo a segundo.
 
+### Painel web
+
+Embutido no próprio binário, em `http://127.0.0.1:8053` por padrão. Tema escuro (padrão) e claro.
+
+- **Visão geral:**
+  - tráfego ao vivo segundo a segundo;
+  - consultas, % bloqueado, % cache, latência média e dispositivos ativos;
+  - gráfico do período, com visão em tabela;
+  - domínios mais consultados e mais bloqueados, dispositivos mais ativos;
+  - latência e saúde de cada upstream.
+- **Dispositivos:**
+  - radar dos ativos e tabela com busca e filtros;
+  - interruptor **Acesso** que isola na hora;
+  - janela de detalhes com resumo de 24 h, regras por dispositivo (com botões por serviço: TikTok, YouTube, redes sociais…), isolamento com modo, motivo e exceções, renomear e esquecer.
+- **Consultas:**
+  - log **ao vivo** (SSE) com filtros por dispositivo, resultado, tipo e texto;
+  - pausar e retomar;
+  - **Bloquear/Liberar** o domínio direto da linha;
+  - modo **Histórico** com paginação.
+- **Listas e regras:**
+  - listas de bloqueio (adicionar, ativar/desativar, remover, sugestões de listas conhecidas);
+  - regras próprias globais;
+  - teste **"o que acontece com este domínio?"**, global ou por dispositivo, mostrando a regra que decide.
+- **Configurações:** tema, troca de senha, informações do servidor e sair.
+
+**Primeiro acesso:**
+1. Ao abrir o painel sem senha definida, ele pede um **código de configuração** que o serviço imprime no log (`journalctl -u heimdalldns | grep codigo`). Assim, ninguém da rede define a senha antes do dono.
+2. A senha fica guardada com bcrypt.
+3. A sessão é um cookie `HttpOnly`/`SameSite=Strict`, válido por 7 dias, guardado no banco só como hash.
+4. As alterações exigem a mesma origem do painel, e as tentativas de senha têm limite por IP.
+
+Esqueceu a senha? `sudo heimdalldns passwd`.
+
+As listas e regras criadas pelo painel ficam no banco e se somam às do arquivo de configuração. As do arquivo aparecem no painel só para leitura.
+
 ### API e linha de comando
 
 API REST em `127.0.0.1:8053`, com token. Por padrão o token é gerado em `<data_dir>/api.token`.
@@ -81,7 +116,10 @@ heimdalldns status
 | `POST /api/clients/{ref}/release` | tira do isolamento |
 | `DELETE /api/clients/{ref}` | esquece o dispositivo |
 | `GET /api/services` | catálogo de serviços |
-| `GET /api/lists` · `POST /api/lists/refresh` | listas de bloqueio |
+| `GET /api/lists` · `POST /api/lists` · `PATCH`/`DELETE /api/lists/{id}` · `POST /api/lists/refresh` | listas de bloqueio |
+| `GET /api/rules` · `PUT /api/rules` · `POST /api/rules/quick` | regras próprias globais; `quick` bloqueia/libera um domínio |
+| `GET /api/filter/test?name=&client=` | qual regra decide um domínio (global ou para um dispositivo) |
+| `POST /api/auth/password` | troca a senha do painel (com o token, não pede a atual) |
 | `GET /api/queries` | histórico: `range`/`from`/`to`, `client`, `status`, `type`, `q`, `limit`, `before` (paginação) |
 | `GET /api/queries/live` | **SSE** do log ao vivo, com os mesmos filtros (evento `query`; `dropped` se o navegador não acompanhar) |
 | `GET /api/stats/summary` | totais do período, % bloqueado, % cache, latência média, dispositivos ativos |
@@ -106,6 +144,7 @@ Num notebook de 20 núcleos:
 | Busca por texto no histórico detalhado (1,2 milhão de linhas) | ~0,5 s |
 | Espaço em disco do histórico detalhado | ~120 bytes por consulta |
 | Primeira consulta depois de ligar | ~20 ms (as conexões DoH/DoT já abrem no início) |
+| Com a lista HaGeZi Threat Intelligence (48 MB, ~2,57 milhões de regras no total) | carga em ~0,8 s, ~92 MB de memória |
 | Resposta do cache / bloqueio | ~35 µs |
 
 ## Uso rápido
@@ -151,11 +190,23 @@ internal/upstream   DoH/DoT/DoQ, escolha do melhor e saúde
 internal/clients    radar: descoberta, MAC/fabricante, PTR, isolamento e regras
 internal/querylog   agregador, resumos, log ao vivo e tráfego por segundo
 internal/store      SQLite: clientes, consultas, resumos, retenção
-internal/api        API REST com token
+internal/api        API REST, login do painel e arquivos do painel
+internal/webui      painel compilado, embutido no binário (gerado por "make web")
+web/                código do painel: React + Vite + Tailwind + TanStack + Recharts
 deploy/             unit do systemd
 ```
 
+## Desenvolvimento do painel
+
+```sh
+make web       # instala as dependências e compila o painel para internal/webui/dist
+make web-dev   # painel com recarga automática; a API vem de um heimdalldns em 127.0.0.1:8053
+```
+
+O painel compilado vai no repositório, então `make build` (ou `go install`) funciona sem Node.
+
 ## Próximas etapas
 
-1. **Dashboard:** React + Vite + Tailwind + shadcn/ui, embutido no binário, com login.
-2. Recursos de segurança: feeds de ameaças, domínios recém-registrados, detecção de DGA e túnel DNS, exportação para o Wazuh.
+1. Recursos de segurança: domínios recém-registrados, detecção de DGA e túnel DNS, exportação para o Wazuh.
+2. Servidor DoH/DoT próprio (proteção fora da rede) e DHCP opcional.
+3. Dois nós com sincronização (HA) e console multi-tenant para MSP.

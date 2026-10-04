@@ -53,10 +53,15 @@ clients:
   neighbor_interval: 1m     # leitura da tabela ARP/NDP (MAC dos dispositivos)
   vendor_db_max_age: 720h   # base de fabricantes (OUI), baixada do Wireshark
 
-# API de controle (usada pelos comandos "heimdalldns clients", "isolate" etc.).
+# Painel web e API de controle (a API também é usada pelos comandos
+# "heimdalldns clients", "isolate" etc.).
 api:
+  # Só nesta máquina por padrão. Para abrir o painel de outros computadores,
+  # use 0.0.0.0:8053 e, de preferência, HTTPS (tls_cert/tls_key).
   listen: 127.0.0.1:8053    # "" desliga
   token: ""                 # vazio = gerado em <data_dir>/api.token
+  tls_cert: ""              # ex.: /etc/heimdalldns/cert.pem
+  tls_key: ""
 
 # Histórico de consultas.
 history:

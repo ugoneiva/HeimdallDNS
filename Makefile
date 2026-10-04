@@ -1,10 +1,19 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: build release test bench run clean
+.PHONY: build web web-dev release test bench run clean
 
+# O painel compilado (internal/webui/dist) vai no repositório: "make build"
+# funciona sem Node. Depois de mexer em web/, rode "make web".
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o bin/heimdalldns ./cmd/heimdalldns
+
+web:
+	cd web && npm ci && npm run build
+
+# Painel com recarga automática; a API vem de um heimdalldns rodando local.
+web-dev:
+	cd web && HEIMDALL_API=http://127.0.0.1:8053 npm run dev
 
 # Binários estáticos para servidores e Raspberry Pi.
 release:

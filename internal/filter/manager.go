@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"sync"
@@ -148,6 +149,12 @@ func (m *Manager) Apply(ctx context.Context) {
 // Start carrega as cópias locais (início rápido, sem rede), depois baixa as
 // listas em segundo plano e repete a cada Interval.
 func (m *Manager) Start(ctx context.Context) {
+	// Downloads interrompidos (serviço parado no meio) deixam temporários.
+	if tmps, _ := filepath.Glob(filepath.Join(m.opts.CacheDir, ".baixando-*")); len(tmps) > 0 {
+		for _, t := range tmps {
+			_ = os.Remove(t)
+		}
+	}
 	m.rebuild()
 	go func() {
 		m.Refresh(ctx)
@@ -229,6 +236,9 @@ func (m *Manager) rebuild() {
 	}
 	mt := b.Build()
 	m.cur.Store(mt)
+	// A montagem gera muito lixo temporário (listas grandes passam de 2 milhões
+	// de domínios); devolve a memória ao sistema em vez de esperar o GC.
+	debug.FreeOSMemory()
 	block, exc := mt.Rules()
 	m.log.Info("regras carregadas", "bloqueio", block, "excecoes", exc, "tempo", time.Since(start).Round(time.Millisecond))
 }

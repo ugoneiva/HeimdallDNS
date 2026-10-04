@@ -1,6 +1,9 @@
 package filter
 
 import (
+	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -129,5 +132,16 @@ func BenchmarkMatch(b *testing.B) {
 	b.ResetTimer()
 	for b.Loop() {
 		m.Match("um.subdominio.qualquer.exemplo.com.br.")
+	}
+}
+
+func TestStartRemovesStaleDownloads(t *testing.T) {
+	dir := t.TempDir()
+	stale := filepath.Join(dir, ".baixando-123")
+	os.WriteFile(stale, []byte("pela metade"), 0o600)
+	m := NewManager(ManagerOptions{CacheDir: dir, Logger: slog.New(slog.DiscardHandler)})
+	m.Start(t.Context())
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Error("o temporário de download interrompido deveria ter sido apagado")
 	}
 }

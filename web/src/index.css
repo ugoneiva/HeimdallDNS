@@ -1,0 +1,164 @@
+@import "tailwindcss";
+
+/* Tokens do painel. O tema escuro é o padrão; o claro é selecionado pelo
+   usuário (ou pelo sistema, no modo automático). As cores das séries dos
+   gráficos foram validadas para daltonismo contra cada superfície. */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0a0e14;
+  --surface: #121821;
+  --surface-2: #18202b;
+  --surface-3: #1f2935;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --ink: #e6edf3;
+  --ink-2: #a7b3c0;
+  --muted: #7d8a99;
+  --grid: #222b36;
+  --axis: #2e3946;
+  --accent: #22d3ee;
+  --accent-ink: #04141a;
+  --accent-soft: rgba(34, 211, 238, 0.12);
+  --s1: #3987e5;
+  --s2: #d95926;
+  --s3: #199e70;
+  --good: #0ca30c;
+  --good-ink: #3fd13f;
+  --warning: #fab219;
+  --critical: #d03b3b;
+  --critical-ink: #ff8a8a;
+  --critical-soft: rgba(208, 59, 59, 0.14);
+  --good-soft: rgba(12, 163, 12, 0.14);
+  --warning-soft: rgba(250, 178, 25, 0.14);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --page: #f4f6f9;
+  --surface: #ffffff;
+  --surface-2: #f1f4f8;
+  --surface-3: #e7ecf2;
+  --border: rgba(11, 18, 32, 0.1);
+  --border-strong: rgba(11, 18, 32, 0.2);
+  --ink: #0b1220;
+  --ink-2: #4a5565;
+  --muted: #6b7685;
+  --grid: #e6e9ee;
+  --axis: #cfd5dd;
+  --accent: #0e7490;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(14, 116, 144, 0.1);
+  --s1: #2a78d6;
+  --s2: #eb6834;
+  --s3: #1baf7a;
+  --good: #0ca30c;
+  --good-ink: #006300;
+  --warning: #fab219;
+  --critical: #d03b3b;
+  --critical-ink: #b42323;
+  --critical-soft: rgba(208, 59, 59, 0.1);
+  --good-soft: rgba(12, 163, 12, 0.1);
+  --warning-soft: rgba(250, 178, 25, 0.16);
+}
+
+@theme inline {
+  --color-page: var(--page);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-s1: var(--s1);
+  --color-s2: var(--s2);
+  --color-s3: var(--s3);
+  --color-good: var(--good);
+  --color-good-ink: var(--good-ink);
+  --color-good-soft: var(--good-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-critical: var(--critical);
+  --color-critical-ink: var(--critical-ink);
+  --color-critical-soft: var(--critical-soft);
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Fundo "high-tech" discreto: grade fina que some nas bordas. */
+.bg-grid {
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: radial-gradient(ellipse at top, black 0%, transparent 70%);
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Recharts: sem contorno de foco no SVG inteiro. */
+.recharts-wrapper,
+.recharts-surface {
+  outline: none;
+}
+
+@keyframes radar-sweep {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes blip {
+  0% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.6);
+  }
+}
+
+@keyframes row-in {
+  from {
+    background: var(--accent-soft);
+  }
+  to {
+    background: transparent;
+  }
+}
+
+.row-new {
+  animation: row-in 1.2s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
