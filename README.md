@@ -67,9 +67,16 @@ Embutido no próprio binário, em `http://127.0.0.1:8053` por padrão. Tema escu
   - gráfico do período, com visão em tabela;
   - domínios mais consultados e mais bloqueados, dispositivos mais ativos;
   - latência e saúde de cada upstream.
+- **Mapa da rede:** a rede como o DNS enxerga:
+  - os aparelhos com ícone por tipo (celular, notebook, TV, impressora, câmera, videogame, IoT…). O tipo é deduzido pelo nome, pelo fabricante e pelo que o aparelho acessa, e pode ser corrigido à mão;
+  - o HeimdallDNS no centro, e a internet com o estado dos upstreams;
+  - os destinos agrupados por serviço (Google, Microsoft, YouTube, redes sociais, nuvem…) e os bloqueados como "anúncios e rastreio";
+  - linhas com espessura pelo volume e vermelho tracejado quando mais da metade é bloqueada; aparelho bloqueado com cadeado.
+
+  Ao passar o mouse, aparecem as conexões daquele aparelho ou serviço; ao clicar, abre a janela do aparelho. Há também visão em tabela, usada sozinha em tela estreita.
 - **Dispositivos:**
   - radar dos ativos e tabela com busca e filtros;
-  - interruptor **Acesso** que isola na hora;
+  - botão **Bloquear** em cada linha e na janela do aparelho, que corta o DNS na hora; o aparelho ainda alcança quem acessar direto por IP, então para cortar tudo combine com o firewall;
   - janela de detalhes com resumo de 24 h, regras por dispositivo (com botões por serviço: TikTok, YouTube, redes sociais…), isolamento com modo, motivo e exceções, renomear e esquecer.
 - **Consultas:**
   - log **ao vivo** (SSE) com filtros por dispositivo, resultado, tipo e texto;
