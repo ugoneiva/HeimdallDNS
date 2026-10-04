@@ -394,3 +394,17 @@ export type PiholeExport = {
 }
 export type PiholePreview = { id: string; export: PiholeExport; plan: Record<string, number> }
 export type PiholeResult = { result: Record<string, number>; notes: string[] }
+
+export type PolicyTemplate = {
+  id: string
+  name: string
+  description?: string
+  lists?: { name: string; url: string; category?: string }[]
+  deny?: string[]
+  allow?: string[]
+  upstreams?: string[]
+  mode?: string
+  security?: Record<string, unknown>
+  groups?: { id: string; name: string; deny?: string[] }[]
+}
+export type ApplyResult = { tenant_id: string; tenant_name: string; ok: boolean; changes: string[]; error?: string }

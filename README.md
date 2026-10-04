@@ -128,6 +128,23 @@ Esqueceu a senha? `sudo heimdalldns passwd -user nome` (padrão: `admin`). Perde
 
 As listas e regras criadas pelo painel ficam no banco e se somam às do arquivo de configuração. As do arquivo aparecem no painel só para leitura.
 
+### Grupos de dispositivos e horários
+
+Em **Dispositivos → Grupos e horários**, crie grupos como Crianças, Visitantes ou Financeiro. Cada grupo tem:
+- **Regras fixas:** domínios, serviços (`service:tiktok`, `service:social`…) e regex;
+- **Horários:** dias da semana e faixa de horário.
+  - A faixa pode passar da meia-noite (22:00 às 07:00).
+  - Cada horário tem regras próprias ou **pausa total**, que bloqueia toda a internet menos o que for liberado (ex.: o site da escola em horário de aula).
+- **Listas globais:** aplicadas ou não.
+
+Na janela de cada aparelho, escolha o grupo. A ordem numa consulta:
+1. regras do próprio aparelho;
+2. horários ativos do grupo;
+3. regras do grupo;
+4. listas globais.
+
+O log mostra a regra que decidiu (ex.: `horário noite: service:tiktok`). Os horários seguem o fuso do servidor e valem na hora, sem reiniciar.
+
 ### Segurança
 
 | Detecção | Como funciona | Gravidade |
@@ -149,6 +166,19 @@ Limites conhecidos:
 - **Domínio recém-registrado:** no modo bloqueio, o **primeiro** acesso a um domínio ainda desconhecido passa enquanto a data é consultada.
 - **TLDs sem RDAP:** ficam sem idade.
 
+
+**Limite de consultas por cliente** (`dns.rate_limit`): padrão de 100 consultas/s por IP, com rajada de 1000. Acima disso:
+- a resposta é REFUSED, com o status "limitada" no log;
+- sai um alerta `query_flood` por minuto (regra Wazuh 112418), e o alerta pode isolar o aparelho sozinho.
+
+Pega aparelho infectado ou em loop sem afetar os outros. O loopback nunca é limitado; libere em `exempt` o roteador, se ele repassa a rede inteira por um IP só. O custo é de ~18 ns por consulta.
+
+**DNSSEC:** o HeimdallDNS é um encaminhador; quem valida as assinaturas é o upstream.
+- **Teste:** a cada partida e a cada 6 h, cada upstream é testado. O domínio `dnssec-failed.org`, com assinatura quebrada de propósito, tem que dar SERVFAIL, e um domínio assinado tem que voltar validado (bit AD).
+- **Resultado:** aparece na tela DNS.
+- **`upstream.require_dnssec: true`:** usa só os upstreams que validam. Se nenhum validar, usa todos e avisa no log.
+
+Cloudflare, Quad9 e Google validam.
 ### DNS criptografado e aparelhos fora da rede
 
 O HeimdallDNS atende **DoT** (RFC 7858, porta 853) e **DoH** (RFC 8484, GET e POST, HTTP/2), além do DNS comum.
@@ -211,6 +241,14 @@ heimdalldns console -listen 127.0.0.1:8070 -data-dir /var/lib/heimdalldns-consol
   - upstreams sem resposta;
   - versão, tempo ligado e papel na alta disponibilidade.
 - **Alertas de todos os clientes numa fila só**, os mais graves primeiro, com **reconhecer** repassado ao cliente.
+
+- **Modelos de política**, aplicados em vários clientes de uma vez:
+  - listas de bloqueio (acrescentadas se faltarem);
+  - regras (somadas às do cliente);
+  - grupos de dispositivos (criados ou atualizados pelo nome);
+  - upstreams e opções de segurança (por exemplo, isolar sozinho quem acessar domínio de ameaça).
+
+  Aplicar só acrescenta: listas e regras próprias de cada cliente continuam. O resultado aparece por cliente, com o que mudou ou o erro. Réplicas recusam (aplique no principal), e cada aplicação entra na auditoria do console.
 
 O console guarda o token da API de todos os clientes: rode-o numa rede de gerência (a VPN de cada cliente) e com HTTPS.
 
@@ -461,9 +499,9 @@ internal/dnsname    domínio registrável (Public Suffix List, só regras ICANN)
 internal/tlsconf    certificado do DoT/DoH: arquivo com recarga ou ACME
 internal/dhcp       servidor DHCPv4: concessões, reservas, DNS local
 internal/ha         alta disponibilidade: snapshot, long-poll e aplicação na réplica
-internal/console    console de MSP: leitura dos clientes e fila única de alertas
 internal/backup     backup (tar.gz, cifra age), restauração em duas etapas, cópias automáticas
 internal/pihole     leitura do Teleporter do Pi-hole (v5 e v6)
+internal/console    console de MSP: leitura dos clientes, fila de alertas e modelos de política
 internal/ad         Active Directory: LDAPS, usuários, grupos e DNS (dnsNode) com travas
 internal/api        API REST, login do painel e arquivos do painel
 internal/webui      painel compilado, embutido no binário (gerado por "make web")

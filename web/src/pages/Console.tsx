@@ -1,6 +1,6 @@
 import { useState, type ComponentType } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Building2, CircleCheck, ExternalLink, LogOut, Monitor, Moon, Plus, ShieldAlert, Sun, Trash } from 'lucide-react'
+import { Building2, CircleCheck, FileStack, ExternalLink, LogOut, Monitor, Moon, Plus, ShieldAlert, Sun, Trash } from 'lucide-react'
 import { api } from '../api'
 import type { ConsoleAlert, TenantState } from '../types'
 import { ago, fmtCompact, fmtDateTime, fmtInt, fmtPct, kindLabel, uptime } from '../lib/format'
@@ -9,12 +9,14 @@ import { Button, Card, ErrorNote, Field, Input, Modal, Segmented, StatusBadge, c
 import { Logo } from '../components/Logo'
 import { SeverityBadge } from './Security'
 import { PasswordForm } from './Settings'
+import { ConsoleTemplates } from './ConsoleTemplates'
 
-type Page = 'tenants' | 'alerts' | 'settings'
+type Page = 'tenants' | 'alerts' | 'templates' | 'settings'
 
 const nav: { page: Page; label: string; icon: ComponentType<{ className?: string }> }[] = [
   { page: 'tenants', label: 'Clientes', icon: Building2 },
   { page: 'alerts', label: 'Alertas', icon: ShieldAlert },
+  { page: 'templates', label: 'Modelos de política', icon: FileStack },
   { page: 'settings', label: 'Configurações', icon: Moon },
 ]
 
@@ -72,6 +74,7 @@ export function ConsoleApp({ version, onLogout }: { version: string; onLogout: (
           <h1 className="mb-5 text-xl font-semibold tracking-tight text-ink">{title}</h1>
           {page === 'tenants' && <Tenants />}
           {page === 'alerts' && <Alerts />}
+          {page === 'templates' && <ConsoleTemplates />}
           {page === 'settings' && <ConsoleSettings onLogout={onLogout} />}
         </div>
       </main>

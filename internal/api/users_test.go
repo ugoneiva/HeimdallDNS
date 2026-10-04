@@ -7,6 +7,7 @@ import (
 	"net/http/cookiejar"
 	"net/netip"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/ugoneiva/HeimdallDNS/internal/ad"
+	"github.com/ugoneiva/HeimdallDNS/internal/console"
 	"github.com/ugoneiva/HeimdallDNS/internal/store"
 )
 
@@ -311,5 +313,86 @@ func TestGroupsAPI(t *testing.T) {
 	}
 	if r, _ := p.do(t, "PUT", "/api/groups", `{"groups":[{"name":"X","schedules":[{"name":"y","start":"99:00","end":"07:00","block_all":true}]}]}`); r.StatusCode != 400 {
 		t.Error("horário inválido deveria falhar")
+	}
+}
+
+func TestConsoleTemplates(t *testing.T) {
+	// Dois clientes (HeimdallDNS de verdade, em memória).
+	var tenants []*panel
+	for range 2 {
+		tp := newPanelWith(t, withDNS(t))
+		login(t, tp)
+		tenants = append(tenants, tp)
+	}
+	// Um já tem a lista e uma regra própria, que precisam continuar.
+	tenants[1].do(t, "PUT", "/api/rules", `{"deny":["so-deste-cliente.com"]}`)
+
+	st, _ := store.Open(t.TempDir() + "/console.db")
+	t.Cleanup(func() { st.Close() })
+	con, err := console.New(console.Options{Store: st})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := newPanelWith(t, func(d *Deps) { d.Console = con })
+	login(t, c)
+	var ids []string
+	for i, tp := range tenants {
+		r, out := c.do(t, "POST", "/api/console/tenants", fmt.Sprintf(`{"name":"Cliente %d","url":%q,"token":"segredo"}`, i, tp.ts.URL))
+		if r.StatusCode != http.StatusCreated {
+			t.Fatalf("cadastrar cliente: %v", out)
+		}
+		ids = append(ids, out["id"].(string))
+	}
+	tpl := `{"templates":[{"name":"Padrão Escritório","deny":["service:jogos","apostas.com"],
+		"groups":[{"name":"Visitantes","deny":["service:social"]}]}]}`
+	r, _ := c.do(t, "PUT", "/api/console/templates", tpl)
+	if r.StatusCode != 200 {
+		t.Fatal("salvar modelo")
+	}
+	req, _ := http.NewRequest("GET", c.ts.URL+"/api/console/templates", nil)
+	resp, _ := c.client.Do(req)
+	var tpls []console.Template
+	jsonDecodeBody(resp, &tpls)
+	resp.Body.Close()
+	if len(tpls) != 1 || tpls[0].ID == "" {
+		t.Fatalf("modelos = %+v", tpls)
+	}
+
+	body := fmt.Sprintf(`{"tenants":[%q,%q]}`, ids[0], ids[1])
+	req, _ = http.NewRequest("POST", c.ts.URL+"/api/console/templates/"+tpls[0].ID+"/apply", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", c.ts.URL)
+	resp, err = c.client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var res []console.ApplyResult
+	jsonDecodeBody(resp, &res)
+	resp.Body.Close()
+	if len(res) != 2 || !res[0].OK || !res[1].OK {
+		t.Fatalf("aplicar = %+v", res)
+	}
+	for i, tp := range tenants {
+		_, _, _, d := tp.flt.UserRules()
+		if !slices.Contains(d, "apostas.com") || !slices.Contains(d, "service:jogos") {
+			t.Errorf("cliente %d: regras = %v", i, d)
+		}
+		if gs := tp.reg.Groups(); len(gs) != 1 || gs[0].Name != "Visitantes" {
+			t.Errorf("cliente %d: grupos = %+v", i, gs)
+		}
+	}
+	if _, _, _, d := tenants[1].flt.UserRules(); !slices.Contains(d, "so-deste-cliente.com") {
+		t.Error("a regra própria do cliente não pode sumir")
+	}
+	// Aplicar de novo não duplica nada (só atualiza o grupo pelo nome).
+	resp, _ = c.client.Do(func() *http.Request {
+		r, _ := http.NewRequest("POST", c.ts.URL+"/api/console/templates/"+tpls[0].ID+"/apply", strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("Origin", c.ts.URL)
+		return r
+	}())
+	resp.Body.Close()
+	if gs := tenants[0].reg.Groups(); len(gs) != 1 {
+		t.Errorf("grupo duplicado: %+v", gs)
 	}
 }
