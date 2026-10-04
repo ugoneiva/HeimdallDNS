@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -30,6 +31,7 @@ import (
 	"github.com/ugoneiva/HeimdallDNS/internal/dhcp"
 	"github.com/ugoneiva/HeimdallDNS/internal/export"
 	"github.com/ugoneiva/HeimdallDNS/internal/filter"
+	"github.com/ugoneiva/HeimdallDNS/internal/ha"
 	"github.com/ugoneiva/HeimdallDNS/internal/nrd"
 	"github.com/ugoneiva/HeimdallDNS/internal/querylog"
 	"github.com/ugoneiva/HeimdallDNS/internal/security"
@@ -295,6 +297,11 @@ func runServer() error {
 		return err
 	}
 
+	haDeps, err := newHA(ctx, cfg, db, flt, sec, reg, log.With("componente", "ha"))
+	if err != nil {
+		return err
+	}
+
 	var httpSrv *http.Server
 	if cfg.API.Listen != "" {
 		token, err := apiToken(cfg)
@@ -311,6 +318,7 @@ func runServer() error {
 				Context: ctx, Token: token, Version: version, Started: started,
 				Server: srv, Cache: dnsCache, Upstream: ups, Filter: flt, Clients: reg,
 				Store: db, Log: qlog, Security: sec, NRD: nrdCheck, UI: webui.FS(), Secure: tls, DHCP: dhcpSrv,
+				HA: haDeps,
 				Encrypted: api.Encrypted{
 					PublicHost: cfg.DNS.PublicHost, DoH: cfg.DNS.DoHListen != "", DoT: len(cfg.DNS.DoTListen) > 0,
 					DoHPort: portOf(cfg.DNS.DoHListen), DoTPort: portOf(firstOr(cfg.DNS.DoTListen)),
@@ -427,6 +435,74 @@ func onQuery(qlog *querylog.Recorder, det *detect.Detector, exp *export.Exporter
 			"status", e.Status, "rcode", e.Rcode, "regra", e.Rule, "upstream", e.Upstream,
 			"tempo", e.Duration.Round(time.Microsecond))
 	}
+}
+
+// newHA liga a alta disponibilidade: o principal publica o snapshot; a
+// réplica o puxa e aplica (listas, regras, segurança, dispositivos, senha).
+func newHA(ctx context.Context, cfg *config.Config, db *store.Store, flt *filter.Manager, sec *security.Manager,
+	reg *clients.Registry, log *slog.Logger) (api.HA, error) {
+	h := api.HA{Role: cfg.HA.Role}
+	switch cfg.HA.Role {
+	case ha.RolePrimary:
+		h.Source = ha.NewSource(cfg.HA.SyncToken, func() (ha.Snapshot, error) {
+			snap := ha.Snapshot{Security: sec.Settings(), Clients: reg.Export()}
+			var err error
+			if snap.Lists, err = db.Lists(); err != nil {
+				return snap, err
+			}
+			if _, err = db.GetJSON(api.AllowKey, &snap.Allow); err != nil {
+				return snap, err
+			}
+			if _, err = db.GetJSON(api.DenyKey, &snap.Deny); err != nil {
+				return snap, err
+			}
+			_, err = db.GetJSON(api.PasswordKey, &snap.PasswordHash)
+			return snap, err
+		}, log)
+		log.Info("nó principal: réplicas sincronizam em /api/sync/snapshot")
+	case ha.RoleReplica:
+		var lastLists, lastRules string
+		r, err := ha.NewReplica(ha.ReplicaOptions{
+			PrimaryURL: cfg.HA.PrimaryURL, Token: cfg.HA.SyncToken, InsecureTLS: cfg.HA.InsecureTLS, Logger: log,
+			Apply: func(s ha.Snapshot) error {
+				// Listas e regras só remontam o filtro quando mudam (é caro).
+				lb, _ := json.Marshal(s.Lists)
+				rb, _ := json.Marshal([][]string{s.Allow, s.Deny})
+				if string(lb) != lastLists || string(rb) != lastRules {
+					if err := db.ReplaceLists(s.Lists); err != nil {
+						return err
+					}
+					if err := db.SetJSON(api.AllowKey, s.Allow); err != nil {
+						return err
+					}
+					if err := db.SetJSON(api.DenyKey, s.Deny); err != nil {
+						return err
+					}
+					if err := api.LoadUserFilter(db, flt); err != nil {
+						return err
+					}
+					go flt.Apply(ctx)
+					lastLists, lastRules = string(lb), string(rb)
+				}
+				if err := sec.SetSettings(s.Security); err != nil {
+					return err
+				}
+				if s.PasswordHash != "" {
+					if err := db.SetJSON(api.PasswordKey, s.PasswordHash); err != nil {
+						return err
+					}
+				}
+				return reg.ApplyRemote(s.Clients)
+			},
+		})
+		if err != nil {
+			return h, err
+		}
+		h.Replica = r
+		go r.Run(ctx)
+		log.Info("nó réplica: configuração vem do principal", "principal", cfg.HA.PrimaryURL)
+	}
+	return h, nil
 }
 
 // newDHCP monta o servidor DHCP se estiver ligado (nil, nil se não).

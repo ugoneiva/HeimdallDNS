@@ -822,6 +822,108 @@ func (r *Registry) LearnLease(ip netip.Addr, mac, hostname string) {
 	}
 }
 
+// State é o que a alta disponibilidade replica de cada dispositivo (sem
+// contadores, que são de cada nó).
+type State struct {
+	ID       string       `json:"id"`
+	MAC      string       `json:"mac,omitempty"`
+	Vendor   string       `json:"vendor,omitempty"`
+	Hostname string       `json:"hostname,omitempty"`
+	IPs      []netip.Addr `json:"ips,omitempty"`
+	Settings Settings     `json:"settings"`
+}
+
+// Export devolve o estado de todos os dispositivos, ordenado por id.
+func (r *Registry) Export() []State {
+	cs := r.all()
+	out := make([]State, 0, len(cs))
+	for _, c := range cs {
+		c.mu.Lock()
+		out = append(out, State{ID: c.id, MAC: c.mac, Vendor: c.vendor, Hostname: c.hostname,
+			IPs: slices.Clone(c.ips), Settings: c.settings})
+		c.mu.Unlock()
+	}
+	slices.SortFunc(out, func(a, b State) int { return strings.Compare(a.ID, b.ID) })
+	return out
+}
+
+// ApplyRemote aplica o estado vindo do nó principal. O dispositivo local que
+// for o mesmo aparelho (mesmo id, MAC ou IP) adota o id do principal, para os
+// dois nós falarem do mesmo jeito do mesmo aparelho. Contadores ficam locais.
+func (r *Registry) ApplyRemote(states []State) error {
+	var save []Record
+	var drop []string
+	r.mu.Lock()
+	for _, st := range states {
+		c := r.byID[st.ID]
+		if c == nil && st.MAC != "" {
+			c = r.byMAC[st.MAC]
+		}
+		if c == nil {
+			for _, ip := range st.IPs {
+				if l := r.byIP[ip]; l != nil {
+					c = l
+					break
+				}
+			}
+		}
+		if c == nil {
+			c = &Client{id: st.ID, firstSeen: time.Now()}
+			r.byID[st.ID] = c
+		}
+		c.mu.Lock()
+		if c.id != st.ID { // adota o id do principal
+			if other := r.byID[st.ID]; other != nil && other != c {
+				c.mu.Unlock()
+				continue // conflito improvável: deixa como está
+			}
+			drop = append(drop, c.id)
+			delete(r.byID, c.id)
+			c.id = st.ID
+			r.byID[c.id] = c
+		}
+		if old := c.settings.AccessToken; old != "" && old != st.Settings.AccessToken {
+			delete(r.byTok, old)
+		}
+		if st.MAC != "" && c.mac != st.MAC {
+			if c.mac != "" && r.byMAC[c.mac] == c {
+				delete(r.byMAC, c.mac)
+			}
+			c.mac = st.MAC
+			r.byMAC[c.mac] = c
+		}
+		if st.Vendor != "" {
+			c.vendor = st.Vendor
+		}
+		if st.Hostname != "" {
+			c.hostname = st.Hostname
+		}
+		for _, ip := range st.IPs {
+			if r.byIP[ip] == nil {
+				r.byIP[ip] = c
+				c.addIPLocked(ip)
+			}
+		}
+		c.settings = st.Settings
+		if t := c.settings.AccessToken; t != "" {
+			r.byTok[t] = c
+		}
+		c.rebuildLocked(r.opts.IsolateMode)
+		save = append(save, c.recordLocked())
+		c.mu.Unlock()
+	}
+	r.mu.Unlock()
+	if r.opts.Store == nil {
+		return nil
+	}
+	for _, id := range drop {
+		if err := r.opts.Store.DeleteClient(id); err != nil {
+			return err
+		}
+	}
+	return r.opts.Store.SaveClients(save)
+}
+
 // Flush grava os clientes alterados desde a última gravação.
 func (r *Registry) Flush() {
 	if r.opts.Store == nil {

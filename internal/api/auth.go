@@ -17,10 +17,13 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// PasswordKey guarda o hash bcrypt da senha do painel nas configurações.
+const PasswordKey = "admin.password"
+
 const (
 	sessionCookie  = "heimdall_session"
 	sessionTTL     = 7 * 24 * time.Hour
-	passwordKey    = "admin.password" // hash bcrypt nas configurações
+	passwordKey    = PasswordKey
 	minPasswordLen = 8
 	maxFailures    = 5
 	maxLockout     = 15 * time.Minute

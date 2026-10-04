@@ -2,7 +2,7 @@
 
 Servidor DNS com filtro de bloqueio, no estilo do Pi-hole, escrito em Go, com funções mais avançadas: radar de dispositivos, isolamento por cliente e dashboard em tempo real.
 
-> **Estado:** em desenvolvimento. MVP completo (motor DNS, radar, histórico, log ao vivo, painel web), detecções de segurança com exportação para o Wazuh, DNS criptografado (DoT/DoH) para aparelhos dentro e fora da rede e DHCP opcional.
+> **Estado:** em desenvolvimento. MVP completo (motor DNS, radar, histórico, log ao vivo, painel web), detecções de segurança com exportação para o Wazuh, DNS criptografado (DoT/DoH) para aparelhos dentro e fora da rede DHCP opcional e alta disponibilidade (principal e réplicas).
 
 ## O que já funciona
 
@@ -146,6 +146,19 @@ Servidor DHCPv4 embutido, **desligado por padrão**. Antes de ligar, desligue o 
 
 A porta 67 exige `CAP_NET_BIND_SERVICE` e `CAP_NET_RAW`; veja a unit em `deploy/`.
 
+### Alta disponibilidade
+
+Dois (ou mais) HeimdallDNS: um **principal** e **réplicas**. Entregue todos como servidores DNS; se um cair, os aparelhos usam o outro.
+
+- **Sincronização:**
+  - a réplica faz *long-poll* no principal, então uma mudança chega em cerca de 1 s (medido: um isolamento passou a valer no DNS da réplica em 196 ms);
+  - sincroniza listas e regras do painel, configurações de segurança, dispositivos (nome, regras, isolamento, token de fora da rede) e a senha do painel;
+  - o mesmo aparelho tem **o mesmo id** nos dois nós: a réplica adota o id do principal, casando por MAC ou IP.
+- **Fica em cada nó:** histórico, contadores, alertas e sessões do painel. O DHCP deve rodar num nó só.
+- **Réplica só leitura:** ela recusa alterações de configuração, apontando o principal. Pode reconhecer os próprios alertas e atualizar as próprias listas.
+- **Principal fora do ar:** a réplica continua atendendo com a última configuração e volta a sincronizar sozinha. O painel mostra o estado dos dois lados.
+- **Segurança:** o snapshot inclui o hash da senha e os tokens dos aparelhos. Use um `sync_token` forte e HTTPS na API (ou uma rede de gerência).
+
 ### API e linha de comando
 
 API REST em `127.0.0.1:8053`, com token. Por padrão o token é gerado em `<data_dir>/api.token`.
@@ -175,6 +188,7 @@ heimdalldns status
 | `GET /api/filter/test?name=&client=` | qual regra decide um domínio (global ou para um dispositivo) |
 | `POST /api/auth/password` | troca a senha do painel (com o token, não pede a atual) |
 | `POST`/`DELETE /api/clients/{ref}/token` · `GET …/access` · `GET …/mobileconfig` | endereço fora da rede do aparelho e perfil da Apple |
+| `GET /api/ha` · `GET /api/sync/snapshot` | estado da alta disponibilidade; snapshot para as réplicas (token `ha.sync_token`, long-poll) |
 | `GET /api/dhcp` · `POST /api/dhcp/reservations` · `DELETE /api/dhcp/reservations/{mac}` | concessões, configuração e reservas do DHCP |
 | `GET /api/security/events` · `GET /api/security/summary` | alertas (filtros `status`, `kind`, `client`, `range`) e contagens |
 | `POST /api/security/events/{id}/ack` · `…/reopen` | reconhece ou reabre (`{id}` = `all` reconhece todos) |
@@ -256,6 +270,7 @@ internal/export     exportação JSON/syslog para SIEM
 internal/dnsname    domínio registrável (Public Suffix List, só regras ICANN)
 internal/tlsconf    certificado do DoT/DoH: arquivo com recarga ou ACME
 internal/dhcp       servidor DHCPv4: concessões, reservas, DNS local
+internal/ha         alta disponibilidade: snapshot, long-poll e aplicação na réplica
 internal/api        API REST, login do painel e arquivos do painel
 internal/webui      painel compilado, embutido no binário (gerado por "make web")
 web/                código do painel: React + Vite + Tailwind + TanStack + Recharts
@@ -273,4 +288,4 @@ O painel compilado vai no repositório, então `make build` (ou `go install`) fu
 
 ## Próximas etapas
 
-1. Dois nós com sincronização (HA) e console multi-tenant para MSP.
+1. Console multi-tenant para MSP (várias instâncias num painel só).

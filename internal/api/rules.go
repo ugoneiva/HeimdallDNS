@@ -15,9 +15,12 @@ import (
 	"github.com/ugoneiva/HeimdallDNS/internal/store"
 )
 
+// Chaves das regras próprias globais nas configurações.
 const (
-	allowKey = "filter.allow"
-	denyKey  = "filter.deny"
+	AllowKey = "filter.allow"
+	DenyKey  = "filter.deny"
+	allowKey = AllowKey
+	denyKey  = DenyKey
 )
 
 // LoadUserFilter lê do banco as listas e regras criadas pela interface e

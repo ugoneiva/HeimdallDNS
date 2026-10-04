@@ -310,3 +310,20 @@ func TestAccessTokenAndMobileconfig(t *testing.T) {
 		t.Error("token revogado continua valendo")
 	}
 }
+
+func TestReplicaReadOnly(t *testing.T) {
+	reg, _ := clients.NewRegistry(clients.Options{})
+	reg.Observe(netip.MustParseAddr("192.168.0.80"), time.Now())
+	ts := httptest.NewServer(New(Deps{Token: "segredo", Clients: reg, HA: HA{Role: "replica"}}))
+	defer ts.Close()
+	if resp, out := call(t, ts, "PATCH", "/api/clients/192.168.0.80", "segredo", `{"name":"x"}`); resp.StatusCode != http.StatusConflict ||
+		!strings.Contains(out["error"].(string), "réplica") {
+		t.Errorf("edição na réplica: %d %v", resp.StatusCode, out)
+	}
+	if resp, _ := call(t, ts, "GET", "/api/clients", "segredo", ""); resp.StatusCode != 200 {
+		t.Errorf("leitura na réplica: %d", resp.StatusCode)
+	}
+	if resp, out := call(t, ts, "GET", "/api/ha", "segredo", ""); resp.StatusCode != 200 || out["role"] != "replica" {
+		t.Errorf("status HA: %v", out)
+	}
+}

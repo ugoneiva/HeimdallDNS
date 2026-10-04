@@ -5,6 +5,7 @@ import { api, authEvents } from './api'
 import type { AuthState } from './types'
 import { cx } from './components/ui'
 import { Logo } from './components/Logo'
+import { HABanner } from './components/HABanner'
 import { Login } from './pages/Login'
 import { Overview } from './pages/Overview'
 import { Devices } from './pages/Devices'
@@ -141,6 +142,7 @@ function Shell({ version, onLogout }: { version: string; onLogout: () => void })
       <main className="relative min-w-0">
         <div className="bg-grid pointer-events-none absolute inset-x-0 top-0 h-64" aria-hidden />
         <div className="relative mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
+          <HABanner />
           <h1 className="mb-5 text-xl font-semibold tracking-tight text-ink">{current.label}</h1>
           {page === 'overview' && <Overview onOpenDevice={(id) => go('devices', id)} onOpenSecurity={() => go('security')} />}
           {page === 'devices' && <Devices openId={arg} onOpen={(id) => go('devices', id)} />}

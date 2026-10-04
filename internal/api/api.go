@@ -40,6 +40,7 @@ type Deps struct {
 	Security  *security.Manager
 	NRD       NRDInfo      // idade dos domínios (nil = sem checagem)
 	DHCP      *dhcp.Server // nil = DHCP desligado
+	HA        HA
 	Encrypted Encrypted
 	UI        fs.FS // arquivos do painel; nil = sem painel
 	Secure    bool  // HTTPS: o cookie de sessão leva a marca Secure
@@ -93,6 +94,7 @@ func build(d Deps) (*api, http.Handler) {
 	api.HandleFunc("DELETE /api/clients/{ref}/token", a.revokeToken)
 	api.HandleFunc("GET /api/clients/{ref}/mobileconfig", a.mobileconfig)
 	api.HandleFunc("GET /api/encrypted", a.encryptedInfo)
+	api.HandleFunc("GET /api/ha", a.haStatus)
 	api.HandleFunc("GET /api/dhcp", a.dhcpState)
 	api.HandleFunc("POST /api/dhcp/reservations", a.dhcpReserve)
 	api.HandleFunc("DELETE /api/dhcp/reservations/{mac}", a.dhcpUnreserve)
@@ -129,7 +131,10 @@ func build(d Deps) (*api, http.Handler) {
 	root.HandleFunc("POST /api/auth/setup", a.setup)
 	root.HandleFunc("POST /api/auth/login", a.login)
 	root.HandleFunc("POST /api/auth/logout", a.logout)
-	root.Handle("/api/", a.requireAuth(api))
+	if d.HA.Source != nil {
+		root.Handle("GET /api/sync/snapshot", d.HA.Source) // token próprio de sincronização
+	}
+	root.Handle("/api/", a.requireAuth(a.replicaGuard(api)))
 	if d.UI != nil {
 		root.Handle("/", uiHandler(d.UI))
 	}

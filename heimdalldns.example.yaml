@@ -111,6 +111,17 @@ dhcp:
   domain: lan
   lease_time: 24h
 
+# Alta disponibilidade: um principal e uma ou mais réplicas. Entregue os dois
+# como servidores DNS (no DHCP ou no roteador). Listas, regras, segurança,
+# dispositivos e a senha do painel vão do principal para as réplicas em ~1 s;
+# histórico e alertas ficam em cada nó; o DHCP fica num nó só. A réplica é só
+# leitura (altere no principal).
+ha:
+  role: ""                  # "" (nó único), primary ou replica
+  sync_token: ""            # segredo de 16+ caracteres, o mesmo em todos os nós
+  primary_url: ""           # réplica: URL da API do principal, ex.: https://10.0.0.2:8053
+  insecure_tls: false       # réplica: aceita certificado autoassinado do principal
+
 # Histórico de consultas.
 history:
   store_queries: true      # grava cada consulta (os resumos por minuto/hora são sempre gravados)

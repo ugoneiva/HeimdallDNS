@@ -197,3 +197,10 @@ export type DHCPState = {
   leases?: DHCPLease[]
   reservations?: DHCPReservation[]
 }
+
+export type HAStatus = {
+  role: '' | 'primary' | 'replica'
+  version?: string
+  replicas?: { addr: string; last_seen: string; version: string }[]
+  replica?: { primary_url: string; version: string; last_sync?: string; error?: string }
+}

@@ -4,9 +4,10 @@ import { LogOut, Monitor, Moon, Sun } from 'lucide-react'
 import { api } from '../api'
 import type { Status } from '../types'
 import { setTheme, useTheme } from '../lib/theme'
-import { fmtInt, fmtPct, uptime } from '../lib/format'
-import { Button, Card, ErrorNote, Field, Input, Segmented } from '../components/ui'
+import { ago, fmtInt, fmtPct, uptime } from '../lib/format'
+import { Button, Card, ErrorNote, Field, Input, Segmented, StatusBadge } from '../components/ui'
 import { useDHCP } from './DHCP'
+import { useHA } from '../components/HABanner'
 
 export function Settings({ onLogout }: { onLogout: () => void }) {
   const { choice } = useTheme()
@@ -55,6 +56,8 @@ export function Settings({ onLogout }: { onLogout: () => void }) {
         )}
       </Card>
 
+      <HACard />
+
       <DHCPCard />
 
       <PasswordCard />
@@ -68,6 +71,72 @@ export function Settings({ onLogout }: { onLogout: () => void }) {
         </Button>
       </Card>
     </div>
+  )
+}
+
+function HACard() {
+  const { data } = useHA()
+  if (!data) return null
+  if (data.role === '') {
+    return (
+      <Card title="Alta disponibilidade" subtitle="Nó único">
+        <p className="mb-3 text-xs leading-relaxed text-ink-2">
+          Com um segundo HeimdallDNS como réplica, a rede continua com DNS se um dos dois cair. Entregue os dois como servidores DNS
+          (no DHCP ou no roteador). Listas, regras, segurança, dispositivos e a senha vão do principal para a réplica em cerca de 1 segundo.
+        </p>
+        <pre className="overflow-x-auto rounded-lg bg-surface-2 p-3 font-mono text-[11px] text-ink">{`# no principal
+ha:
+  role: primary
+  sync_token: <segredo de 16+ caracteres>
+
+# na réplica
+ha:
+  role: replica
+  sync_token: <o mesmo segredo>
+  primary_url: http://IP-DO-PRINCIPAL:8053`}</pre>
+      </Card>
+    )
+  }
+  if (data.role === 'replica') {
+    const r = data.replica
+    return (
+      <Card title="Alta disponibilidade" subtitle="Este nó é uma réplica">
+        <dl className="grid grid-cols-2 gap-3 text-xs">
+          <div>
+            <dt className="text-muted">Principal</dt>
+            <dd className="mt-0.5 font-mono text-ink">{r?.primary_url}</dd>
+          </div>
+          <div>
+            <dt className="text-muted">Última sincronização</dt>
+            <dd className="mt-0.5 text-ink">{ago(r?.last_sync)}</dd>
+          </div>
+          {r?.error && (
+            <div className="col-span-2">
+              <dt className="text-muted">Erro</dt>
+              <dd className="mt-0.5 break-all text-critical-ink">{r.error}</dd>
+            </div>
+          )}
+        </dl>
+      </Card>
+    )
+  }
+  const reps = data.replicas ?? []
+  return (
+    <Card title="Alta disponibilidade" subtitle="Este nó é o principal">
+      {reps.length === 0 ? (
+        <p className="text-xs text-muted">Nenhuma réplica conectada na última hora.</p>
+      ) : (
+        <ul className="space-y-2 text-xs">
+          {reps.map((r) => (
+            <li key={r.addr} className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-mono text-ink">{r.addr}</span>
+              <span className="text-ink-2">visto {ago(r.last_seen)}</span>
+              {r.version === data.version ? <StatusBadge tone="good">Em dia</StatusBadge> : <StatusBadge tone="warning">Atualizando</StatusBadge>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
   )
 }
 
@@ -92,6 +161,18 @@ function DHCPCard() {
 }
 
 function PasswordCard() {
+  const ha = useHA()
+  if (ha.data?.role === 'replica') {
+    return (
+      <Card title="Trocar a senha" subtitle="Feito no principal">
+        <p className="text-xs text-ink-2">Nesta réplica a senha vem do principal: troque por lá e ela chega aqui em cerca de 1 segundo.</p>
+      </Card>
+    )
+  }
+  return <PasswordForm />
+}
+
+function PasswordForm() {
   const [current, setCurrent] = useState('')
   const [pw, setPw] = useState('')
   const [pw2, setPw2] = useState('')

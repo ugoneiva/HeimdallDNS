@@ -40,6 +40,7 @@ type Config struct {
 	Security     Security            `yaml:"security"`
 	Export       Export              `yaml:"export"`
 	DHCP         DHCP                `yaml:"dhcp"`
+	HA           HA                  `yaml:"ha"`
 	LocalRecords map[string][]string `yaml:"local_records"`
 	DataDir      string              `yaml:"data_dir"`
 	Log          Log                 `yaml:"log"`
@@ -148,6 +149,14 @@ type DHCP struct {
 	DNS        []string      `yaml:"dns"`    // vazio = esta máquina
 	Domain     string        `yaml:"domain"`
 	LeaseTime  time.Duration `yaml:"lease_time"`
+}
+
+// HA liga a replicação entre nós: um principal e réplicas.
+type HA struct {
+	Role        string `yaml:"role"`         // "" (nó único), primary ou replica
+	SyncToken   string `yaml:"sync_token"`   // segredo compartilhado, o mesmo em todos os nós
+	PrimaryURL  string `yaml:"primary_url"`  // réplica: URL da API do principal
+	InsecureTLS bool   `yaml:"insecure_tls"` // réplica: aceita certificado autoassinado do principal
 }
 
 type Export struct {
@@ -275,6 +284,21 @@ func (c *Config) Validate() error {
 				errs = append(errs, fmt.Errorf("dhcp: range_start/range_end precisam ser IPv4 (%q)", v))
 			}
 		}
+	}
+	switch c.HA.Role {
+	case "":
+	case "primary", "replica":
+		if len(c.HA.SyncToken) < 16 {
+			errs = append(errs, errors.New("ha.sync_token: use um segredo de pelo menos 16 caracteres (o mesmo nos dois nós)"))
+		}
+		if c.HA.Role == "replica" && c.HA.PrimaryURL == "" {
+			errs = append(errs, errors.New("ha.primary_url: informe a URL da API do principal"))
+		}
+		if c.API.Listen == "" {
+			errs = append(errs, errors.New("ha precisa da API ligada (api.listen)"))
+		}
+	default:
+		errs = append(errs, fmt.Errorf(`ha.role %q: use "primary" ou "replica"`, c.HA.Role))
 	}
 	if c.History.Retention <= 0 || c.History.StatsRetention <= 0 {
 		errs = append(errs, errors.New("history.retention e history.stats_retention devem ser positivos"))

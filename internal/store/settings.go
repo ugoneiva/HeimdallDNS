@@ -123,3 +123,23 @@ func (s *Store) DeleteSessions(all bool) error {
 	_, err := s.db.Exec(`DELETE FROM sessions WHERE expires <= ?`, time.Now().Unix())
 	return err
 }
+
+// ReplaceLists troca todas as listas da interface (réplica de alta
+// disponibilidade), mantendo os ids do principal.
+func (s *Store) ReplaceLists(ls []List) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM blocklists`); err != nil {
+		return err
+	}
+	for _, l := range ls {
+		if _, err := tx.Exec(`INSERT INTO blocklists (id, name, url, enabled, category, created) VALUES (?, ?, ?, ?, ?, ?)`,
+			l.ID, l.Name, l.URL, l.Enabled, l.Category, l.Created.Unix()); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}

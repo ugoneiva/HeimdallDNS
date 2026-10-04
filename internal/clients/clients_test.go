@@ -342,3 +342,42 @@ func TestLearnLease(t *testing.T) {
 		t.Errorf("aprendeu pelo DHCP: %+v", v)
 	}
 }
+
+func TestApplyRemote(t *testing.T) {
+	st := &memStore{recs: map[string]Record{}}
+	n := &fakeNet{table: map[netip.Addr]string{ipA: macX}}
+	r := newReg(t, st, n)
+	local := r.Observe(ipA, time.Now()) // o mesmo aparelho, visto pela réplica com outro id
+	enrich(r, ipA)
+	oldID := local.ID()
+
+	err := r.ApplyRemote([]State{
+		{ID: "principal1", MAC: macX, Hostname: "tv", Settings: Settings{Name: "TV da sala", Isolated: true, IsolateMode: ModeNXDomain, AccessToken: "abcd1234abcd1234"}},
+		{ID: "principal2", MAC: macY, IPs: []netip.Addr{ipB}, Settings: Settings{Deny: []string{"service:tiktok"}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, _ := r.Find("principal1")
+	if c != local || c.ID() != "principal1" {
+		t.Fatalf("a réplica deveria adotar o id do principal: %v", c)
+	}
+	if !c.Policy().IsolatedFor("x.com") || c.Policy().IsolateMode != ModeNXDomain || c.View().Display != "TV da sala" {
+		t.Errorf("configurações do principal: %+v", c.View())
+	}
+	if r.ByToken("abcd1234abcd1234") != c {
+		t.Error("token de fora da rede deveria valer na réplica")
+	}
+	if _, ok := st.recs[oldID]; ok {
+		t.Error("o id antigo deveria sair do banco")
+	}
+	d, _ := r.Find(ipB.String())
+	if d == nil || d.ID() != "principal2" || d.Policy().Match("www.tiktok.com").Verdict == 0 {
+		t.Errorf("aparelho só do principal: %+v", d)
+	}
+	// Liberado no principal: libera na réplica.
+	r.ApplyRemote([]State{{ID: "principal1", MAC: macX, Settings: Settings{Name: "TV da sala"}}})
+	if c.Policy().Isolated || r.ByToken("abcd1234abcd1234") != nil {
+		t.Error("liberação e revogação do token deveriam valer")
+	}
+}
