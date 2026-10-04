@@ -1,0 +1,22 @@
+# HeimdallDNS — configuração instalada pelo pacote.
+# Todas as opções, comentadas: /usr/share/doc/heimdalldns/heimdalldns.example.yaml
+# Depois de mudar: systemctl restart heimdalldns
+#
+# Quase tudo (listas, regras, upstreams, registros locais, segurança) também
+# se ajusta pelo painel, sem editar este arquivo.
+
+dns:
+  # Porta 53 em todas as interfaces. No Ubuntu/Debian/Fedora, o
+  # systemd-resolved ocupa 127.0.0.53:53: desligue o ouvinte dele
+  # (DNSStubListener=no em /etc/systemd/resolved.conf) ou use só o IP da rede,
+  # por exemplo ["192.168.0.2:53"].
+  listen: [":53"]
+
+api:
+  # Painel e API na rede local, com HTTPS autoassinado gerado na primeira vez
+  # (o navegador vai pedir para aceitar o certificado). No primeiro acesso, o
+  # painel pede o código impresso no log: journalctl -u heimdalldns | grep codigo
+  listen: ":8053"
+  tls_cert: auto
+
+data_dir: /var/lib/heimdalldns

@@ -1,6 +1,6 @@
 import { useEffect, useState, type ComponentType } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { BookUser, Gauge, ListFilter, Network, Radar as RadarIcon, ScrollText, Settings as SettingsIcon, ShieldAlert } from 'lucide-react'
+import { BookUser, Gauge, Globe, ListFilter, Network, Radar as RadarIcon, ScrollText, Settings as SettingsIcon, ShieldAlert } from 'lucide-react'
 import { api, authEvents } from './api'
 import type { AuthState } from './types'
 import { cx } from './components/ui'
@@ -16,8 +16,10 @@ import { Security, useSecuritySummary } from './pages/Security'
 import { DHCP, useDHCP } from './pages/DHCP'
 import { ConsoleApp } from './pages/Console'
 import { ActiveDirectory, useADInfo } from './pages/ActiveDirectory'
+import { DNS } from './pages/DNS'
+import { Wizard } from './pages/Wizard'
 
-type Page = 'overview' | 'devices' | 'security' | 'queries' | 'lists' | 'dhcp' | 'ad' | 'settings'
+type Page = 'overview' | 'devices' | 'security' | 'queries' | 'lists' | 'dns' | 'dhcp' | 'ad' | 'settings'
 
 const nav: { page: Page; path: string; label: string; icon: ComponentType<{ className?: string }> }[] = [
   { page: 'overview', path: '', label: 'Visão geral', icon: Gauge },
@@ -25,6 +27,7 @@ const nav: { page: Page; path: string; label: string; icon: ComponentType<{ clas
   { page: 'security', path: 'seguranca', label: 'Segurança', icon: ShieldAlert },
   { page: 'queries', path: 'consultas', label: 'Consultas', icon: ScrollText },
   { page: 'lists', path: 'listas', label: 'Listas e regras', icon: ListFilter },
+  { page: 'dns', path: 'dns', label: 'DNS', icon: Globe },
   { page: 'dhcp', path: 'dhcp', label: 'DHCP', icon: Network },
   { page: 'ad', path: 'ad', label: 'Active Directory', icon: BookUser },
   { page: 'settings', path: 'configuracoes', label: 'Configurações', icon: SettingsIcon },
@@ -86,6 +89,8 @@ export default function App() {
     return <ConsoleApp version={auth.data.version} onLogout={logout} />
   }
   return (
+    <>
+    {auth.data.wizard && <Wizard onClose={() => {}} />}
     <Shell
       version={auth.data.version}
       onLogout={async () => {
@@ -95,6 +100,7 @@ export default function App() {
         await qc.resetQueries({ queryKey: ['auth'] })
       }}
     />
+    </>
   )
 }
 
@@ -162,6 +168,7 @@ function Shell({ version, onLogout }: { version: string; onLogout: () => void })
           {page === 'security' && <Security onOpenDevice={(id) => go('devices', id)} />}
           {page === 'queries' && <QueryLog />}
           {page === 'lists' && <Lists />}
+          {page === 'dns' && <DNS />}
           {page === 'dhcp' && <DHCP onOpenDevice={(id) => go('devices', id)} />}
           {page === 'ad' && <ActiveDirectory />}
           {page === 'settings' && <Settings onLogout={onLogout} />}

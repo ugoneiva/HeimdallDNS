@@ -5,7 +5,7 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-ExecStart=/usr/local/bin/heimdalldns -config /etc/heimdalldns/heimdalldns.yaml -data-dir /var/lib/heimdalldns
+ExecStart=/usr/bin/heimdalldns -config /etc/heimdalldns/heimdalldns.yaml -data-dir /var/lib/heimdalldns
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 

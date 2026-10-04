@@ -180,6 +180,7 @@ func (a *api) authState(w http.ResponseWriter, r *http.Request) {
 		"version":        a.Version,
 		"mode":           map[bool]string{true: "console", false: "dns"}[a.Console != nil],
 		"mfa":            a.mfaEnabled(),
+		"wizard":         ok && a.wizardPending(),
 	})
 }
 
@@ -217,6 +218,9 @@ func (a *api) setup(w http.ResponseWriter, r *http.Request) {
 	a.guard.ok(ip)
 	a.setupCode = ""
 	a.Logger.Info("senha do painel definida", "origem", ip)
+	if a.Console == nil {
+		_ = a.Store.SetJSON(WizardKey, true) // instalação nova: o painel abre o assistente
+	}
 	if err := a.startSession(w); err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
@@ -327,5 +331,22 @@ func (a *api) changePassword(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	a.Logger.Info("senha do painel alterada", "origem", remoteIP(r))
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// WizardKey marca que o assistente de primeiro acesso ainda não foi concluído.
+const WizardKey = "ui.wizard_pending"
+
+func (a *api) wizardPending() bool {
+	var pending bool
+	_, _ = a.Store.GetJSON(WizardKey, &pending)
+	return pending
+}
+
+func (a *api) wizardDone(w http.ResponseWriter, _ *http.Request) {
+	if err := a.Store.SetJSON(WizardKey, false); err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }

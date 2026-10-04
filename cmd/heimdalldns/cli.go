@@ -8,6 +8,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/netip"
 	"net/url"
@@ -26,6 +28,7 @@ import (
 var commands = map[string]bool{
 	"status": true, "clients": true, "client": true, "name": true, "isolate": true,
 	"release": true, "rules": true, "forget": true, "services": true, "passwd": true, "mfa-off": true,
+	"backup": true, "restore": true,
 }
 
 func isCommand(s string) bool { return commands[s] }
@@ -48,6 +51,11 @@ func runCLI(cmd string, args []string) error {
 	allow := fs.String("allow", "", "rules: exceções do dispositivo (\"\" limpa)")
 	global := fs.Bool("global", true, "rules: aplica também as listas globais")
 	jsonOut := fs.Bool("json", false, "saída em JSON")
+	output := fs.String("o", "", "backup: arquivo de saída (padrão: nome sugerido pelo servidor)")
+	full := fs.Bool("full", false, "backup: inclui o histórico de consultas")
+	encrypt := fs.Bool("encrypt", false, "backup: cifra com uma senha (pedida no terminal)")
+	passFile := fs.String("passphrase-file", "", "backup/restore: arquivo com a senha do backup")
+	restartNow := fs.Bool("restart", false, "restore: reinicia o serviço na hora para aplicar")
 	pos, err := parseInterspersed(fs, args)
 	if err != nil {
 		return err
@@ -143,6 +151,43 @@ func runCLI(cmd string, args []string) error {
 			return err
 		}
 		fmt.Println("verificação em duas etapas desligada; ligue de novo pelo painel")
+		return nil
+	case "backup":
+		pass := ""
+		if *passFile != "" || *encrypt {
+			if pass, err = readPassphrase(*passFile, true); err != nil {
+				return err
+			}
+		}
+		return c.backup(*output, *full, pass)
+	case "restore":
+		if err := need(1, "<arquivo> [-passphrase-file f] [-restart]"); err != nil {
+			return err
+		}
+		pass := ""
+		if *passFile != "" {
+			if pass, err = readPassphrase(*passFile, false); err != nil {
+				return err
+			}
+		}
+		err := c.restore(pos[0], pass)
+		if errors.Is(err, errNeedPassphrase) && *passFile == "" {
+			if pass, err = readPassphrase("", false); err != nil {
+				return err
+			}
+			err = c.restore(pos[0], pass)
+		}
+		if err != nil {
+			return err
+		}
+		if !*restartNow {
+			fmt.Println("restauração preparada: vale quando o serviço reiniciar (use -restart ou systemctl restart heimdalldns)")
+			return nil
+		}
+		if err := c.do("POST", "/api/restart", map[string]any{}, nil); err != nil {
+			return err
+		}
+		fmt.Println("restauração preparada; serviço reiniciando")
 		return nil
 	case "services":
 		var out struct {
@@ -401,4 +446,147 @@ func readNewPassword() (string, error) {
 		return "", errors.New("as senhas não conferem")
 	}
 	return string(a), nil
+}
+
+var errNeedPassphrase = errors.New("backup cifrado: informe a senha")
+
+// readPassphrase lê a senha do backup de um arquivo ou do terminal.
+func readPassphrase(file string, confirm bool) (string, error) {
+	if file != "" {
+		b, err := os.ReadFile(file)
+		return strings.TrimRight(string(b), "\r\n"), err
+	}
+	fd := int(os.Stdin.Fd())
+	if !term.IsTerminal(fd) {
+		return "", errors.New("sem terminal: use -passphrase-file")
+	}
+	fmt.Fprint(os.Stderr, "Senha do backup: ")
+	a, err := term.ReadPassword(fd)
+	fmt.Fprintln(os.Stderr)
+	if err != nil || !confirm {
+		return string(a), err
+	}
+	fmt.Fprint(os.Stderr, "Repita a senha: ")
+	b, err := term.ReadPassword(fd)
+	fmt.Fprintln(os.Stderr)
+	if err != nil {
+		return "", err
+	}
+	if string(a) != string(b) {
+		return "", errors.New("as senhas não conferem")
+	}
+	return string(a), nil
+}
+
+// backup baixa um backup gerado na hora.
+func (c *cli) backup(output string, full bool, pass string) error {
+	b, _ := json.Marshal(map[string]any{"full": full, "passphrase": pass})
+	req, err := http.NewRequest("POST", c.base+"/api/backup", bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.long().Do(req)
+	if err != nil {
+		return fmt.Errorf("servidor fora do ar? %w", err)
+	}
+	defer resp.Body.Close()
+	if err := apiError(resp); err != nil {
+		return err
+	}
+	if output == "" {
+		_, params, _ := mime.ParseMediaType(resp.Header.Get("Content-Disposition"))
+		output = filepath.Base(params["filename"])
+		if output == "." || output == "/" || output == "" {
+			output = "heimdalldns-backup.tar.gz"
+		}
+	}
+	f, err := os.OpenFile(output, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	n, err := io.Copy(f, resp.Body)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		os.Remove(output)
+		return err
+	}
+	fmt.Printf("backup gravado em %s (%.1f MB)\n", output, float64(n)/1e6)
+	return nil
+}
+
+// restore envia o arquivo; o servidor confere e deixa pronto para reiniciar.
+func (c *cli) restore(path, pass string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	pr, pw := io.Pipe()
+	mw := multipart.NewWriter(pw)
+	go func() {
+		err := mw.WriteField("passphrase", pass)
+		if err == nil {
+			var part io.Writer
+			if part, err = mw.CreateFormFile("file", filepath.Base(path)); err == nil {
+				_, err = io.Copy(part, f)
+			}
+		}
+		if err == nil {
+			err = mw.Close()
+		}
+		pw.CloseWithError(err)
+	}()
+	req, err := http.NewRequest("POST", c.base+"/api/restore", pr)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	resp, err := c.long().Do(req)
+	if err != nil {
+		return fmt.Errorf("servidor fora do ar? %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized && pass == "" {
+		return errNeedPassphrase
+	}
+	if err := apiError(resp); err != nil {
+		return err
+	}
+	var out struct {
+		Pending struct {
+			Hostname string    `json:"hostname"`
+			Version  string    `json:"version"`
+			Created  time.Time `json:"created"`
+		} `json:"pending"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	fmt.Printf("backup conferido: %s, versão %s, de %s\n", out.Pending.Hostname, out.Pending.Version,
+		out.Pending.Created.Local().Format("02/01/2006 15:04"))
+	return nil
+}
+
+// long é o cliente sem limite de tempo (arquivos grandes).
+func (c *cli) long() *http.Client {
+	hc := *c.http
+	hc.Timeout = 0
+	return &hc
+}
+
+func apiError(resp *http.Response) error {
+	if resp.StatusCode < 300 {
+		return nil
+	}
+	var e struct {
+		Error string `json:"error"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&e)
+	if e.Error == "" {
+		e.Error = resp.Status
+	}
+	return errors.New(e.Error)
 }

@@ -130,23 +130,7 @@ func (a *api) adWrite(action string, op adOp) http.HandlerFunc {
 			return
 		}
 		target, details, result, opErr := op(r)
-		_, cookie := a.authenticate(r)
-		actor := "api"
-		if cookie {
-			actor = "painel"
-		}
-		entry := store.AuditEntry{Time: time.Now(), Actor: actor, IP: remoteIP(r), Action: action, Target: target,
-			Details: details, OK: opErr == nil}
-		if opErr != nil {
-			entry.Error = opErr.Error()
-		}
-		if err := a.Store.InsertAudit(&entry); err != nil {
-			a.Logger.Error("falha ao gravar auditoria", "acao", action, "erro", err)
-		}
-		if a.Audit != nil {
-			a.Audit.Audit(entry)
-		}
-		a.Logger.Warn("alteração no AD", "acao", action, "alvo", target, "ok", entry.OK, "origem", entry.IP, "erro", entry.Error)
+		a.audit(r, action, target, details, opErr)
 		if opErr != nil {
 			writeErr(w, http.StatusBadRequest, opErr)
 			return

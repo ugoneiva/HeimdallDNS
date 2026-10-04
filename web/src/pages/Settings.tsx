@@ -9,6 +9,7 @@ import { ago, fmtInt, fmtPct, uptime } from '../lib/format'
 import { Button, Card, ErrorNote, Field, Input, Segmented, StatusBadge } from '../components/ui'
 import { useDHCP } from './DHCP'
 import { useHA } from '../components/HABanner'
+import { BackupCard, PiholeImport } from './Maintenance'
 
 export function Settings({ onLogout }: { onLogout: () => void }) {
   const { choice } = useTheme()
@@ -60,6 +61,12 @@ export function Settings({ onLogout }: { onLogout: () => void }) {
       <HACard />
 
       <DHCPCard />
+
+      <BackupCard />
+
+      <Card title="Migrar do Pi-hole" subtitle="Listas, regras, registros locais, reservas de DHCP e nomes dos aparelhos">
+        <PiholeImport />
+      </Card>
 
       <PasswordCard />
 

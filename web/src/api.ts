@@ -45,3 +45,42 @@ export function qs(params: Record<string, string | number | undefined | null>): 
   const s = p.toString()
   return s ? `?${s}` : ''
 }
+
+async function fail(res: Response): Promise<never> {
+  let msg = `Erro ${res.status}`
+  try {
+    msg = ((await res.json()) as { error?: string }).error ?? msg
+  } catch {
+    /* corpo sem JSON */
+  }
+  if (res.status === 401 && !res.url.includes('/api/auth/') && !res.url.includes('/api/restore')) {
+    authEvents.dispatchEvent(new Event('expired'))
+  }
+  throw new ApiError(res.status, msg)
+}
+
+// upload envia um formulário multipart (arquivos). Os campos de texto devem
+// vir antes do arquivo: o servidor lê na ordem.
+export async function upload<T = unknown>(path: string, form: FormData): Promise<T> {
+  const res = await fetch(path, { method: 'POST', credentials: 'same-origin', body: form })
+  if (!res.ok) return fail(res)
+  return (await res.json()) as T
+}
+
+// download faz o POST e entrega o arquivo ao navegador para salvar.
+export async function download(path: string, body: unknown, fallbackName: string): Promise<void> {
+  const res = await fetch(path, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) return fail(res)
+  const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? fallbackName
+  const url = URL.createObjectURL(await res.blob())
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 10_000)
+}

@@ -145,6 +145,7 @@ export function Switch({ checked, onChange, label, disabled }: {
 }) {
   return (
     <button
+      type="button"
       role="switch"
       aria-checked={checked}
       aria-label={label}
@@ -159,6 +160,23 @@ export function Switch({ checked, onChange, label, disabled }: {
     >
       <span className={cx('inline-block size-4 rounded-full bg-white shadow transition-transform', checked ? 'translate-x-4.5' : 'translate-x-0.5')} />
     </button>
+  )
+}
+
+/** Interruptor com o texto visível ao lado (clicar no texto também alterna). */
+export function LabeledSwitch({ checked, onChange, label, disabled }: {
+  checked: boolean
+  onChange: (v: boolean) => void
+  label: string
+  disabled?: boolean
+}) {
+  return (
+    <div className="flex items-start gap-2.5 text-xs text-ink-2">
+      <Switch checked={checked} onChange={onChange} label={label} disabled={disabled} />
+      <span className="cursor-pointer pt-0.5 select-none" onClick={() => !disabled && onChange(!checked)} aria-hidden>
+        {label}
+      </span>
+    </div>
   )
 }
 

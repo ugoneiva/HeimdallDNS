@@ -1,0 +1,8 @@
+# Configuração da imagem Docker. Para trocar, monte a sua por cima:
+#   -v ./heimdalldns.yaml:/etc/heimdalldns/heimdalldns.yaml:ro
+dns:
+  listen: [":53"]
+api:
+  listen: ":8053"
+  tls_cert: auto
+data_dir: /data

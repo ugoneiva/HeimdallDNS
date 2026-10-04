@@ -48,7 +48,10 @@ systemctl restart wazuh-manager
 | 112430 | 3 | operação administrativa registrada na auditoria |
 | 112431 | 8 | alteração no Active Directory feita pelo HeimdallDNS (T1098) |
 | 112432 | 10 | AD: usuário criado/excluído ou senha redefinida (T1136.002, T1098) |
-| 112433 | 6 | alteração no AD recusada (travas, permissão ou política de senha) |
+| 112433 | 6 | operação administrativa recusada (travas, permissão, senha do backup, política de senha do AD) |
+| 112434 | 8 | restauração de backup, reinício pelo painel ou importação do Pi-hole |
+| 112435 | 8 | servidores DNS de saída (upstreams) trocados: confira se foi você |
+| 112436 | 5 | backup baixado (leva hash da senha e tokens) |
 
 
 ## Exemplo de evento

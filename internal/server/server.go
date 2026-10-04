@@ -117,7 +117,24 @@ type Server struct {
 	doh      *http.Server
 	dohAddr  net.Addr
 
+	localTab atomic.Pointer[Local]
+
 	total, forwarded, cached, blocked, isolated, local, refused, errs atomic.Uint64
+}
+
+// Local são as respostas da própria rede: endereços (A/AAAA) e apelidos
+// (CNAME), com nomes FQDN minúsculos ("nas.casa.").
+type Local struct {
+	Hosts map[string][]netip.Addr
+	CNAME map[string]string
+}
+
+// SetLocal troca os registros locais (painel, importação, réplica).
+func (s *Server) SetLocal(l *Local) {
+	if l == nil {
+		l = &Local{}
+	}
+	s.localTab.Store(l)
 }
 
 func New(opts Options) *Server {
@@ -130,7 +147,9 @@ func New(opts Options) *Server {
 	if opts.Filter == nil {
 		opts.Filter = func() *filter.Matcher { return nil }
 	}
-	return &Server{opts: opts, log: opts.Logger}
+	s := &Server{opts: opts, log: opts.Logger}
+	s.SetLocal(&Local{Hosts: opts.LocalRecords})
+	return s
 }
 
 // Start abre UDP e TCP em cada endereço. Falha de bind volta como erro.
@@ -421,18 +440,46 @@ func (s *Server) localAnswer(r *dns.Msg, name string) *dns.Msg {
 			}
 		}
 	}
-	ips, ok := s.opts.LocalRecords[name]
+	tab := s.localTab.Load()
+	m := reply(r, dns.RcodeSuccess)
+	m.Authoritative = true
+	// Apelidos: segue a cadeia (até 8 passos) e responde o destino, local ou
+	// pelo upstream.
+	owner := q.Name
+	for range 8 {
+		target, ok := tab.CNAME[name]
+		if !ok {
+			break
+		}
+		m.Answer = append(m.Answer, &dns.CNAME{Hdr: dns.RR_Header{Name: owner, Rrtype: dns.TypeCNAME, Class: dns.ClassINET, Ttl: 300}, Target: target})
+		if q.Qtype == dns.TypeCNAME {
+			return m
+		}
+		name, owner = target, target
+	}
+	ips, ok := tab.Hosts[name]
 	if !ok && s.opts.LocalLookup != nil {
 		ips = s.opts.LocalLookup(name)
 		ok = len(ips) > 0
 	}
 	if !ok {
-		return nil
+		if len(m.Answer) == 0 {
+			return nil
+		}
+		// Destino fora da rede: pergunta ao upstream (com cache).
+		key := cache.Key{Name: name, Qtype: q.Qtype, Qclass: q.Qclass}
+		up, _, hit := s.opts.Cache.Get(key)
+		if !hit {
+			var err error
+			if up, _, err = s.resolve(key, false); err != nil {
+				return m // só o CNAME: o resolvedor do aparelho completa
+			}
+		}
+		m.Answer = append(m.Answer, up.Copy().Answer...)
+		return m
 	}
-	m := reply(r, dns.RcodeSuccess)
-	m.Authoritative = true
 	for _, ip := range ips {
-		hdr := dns.RR_Header{Name: q.Name, Class: dns.ClassINET, Ttl: 300}
+		hdr := dns.RR_Header{Name: owner, Class: dns.ClassINET, Ttl: 300}
 		switch {
 		case q.Qtype == dns.TypeA && ip.Is4():
 			hdr.Rrtype = dns.TypeA

@@ -75,7 +75,7 @@ api:
   # use 0.0.0.0:8053 e, de preferência, HTTPS (tls_cert/tls_key).
   listen: 127.0.0.1:8053    # "" desliga
   token: ""                 # vazio = gerado em <data_dir>/api.token
-  tls_cert: ""              # ex.: /etc/heimdalldns/cert.pem
+  tls_cert: ""              # ex.: /etc/heimdalldns/cert.pem, ou "auto" (autoassinado gerado no data_dir)
   tls_key: ""
 
 # Detecções de segurança. Estes são os valores iniciais: depois que o painel
@@ -138,6 +138,13 @@ ad:
   user_ous: []              # ex.: ["OU=Colaboradores,DC=empresa,DC=local"]
   managed_groups: []        # ex.: ["VPN-Usuarios", "Wi-Fi-Corporativo"]
   dns_zones: []             # ex.: ["empresa.local"]
+
+# Cópias automáticas (o painel e "heimdalldns backup" geram cópias na hora).
+backup:
+  interval: 24h             # 0 desliga
+  keep: 7                   # quantas guardar
+  dir: ""                   # "" = <data_dir>/backups
+  full: false               # true inclui o histórico de consultas
 
 # Histórico de consultas.
 history:

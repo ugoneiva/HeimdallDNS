@@ -1,0 +1,30 @@
+# Maintainer: JLW Security
+# Pacote binário a partir das versões publicadas no GitHub. O goreleaser
+# também gera um .pkg.tar.zst pronto (pacman -U).
+pkgname=heimdalldns-bin
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Servidor DNS com filtro (estilo Pi-hole), radar de dispositivos e detecção de ameaças'
+arch=('x86_64' 'aarch64' 'armv7h')
+url='https://github.com/ugoneiva/HeimdallDNS'
+license=('LicenseRef-Proprietary')
+provides=('heimdalldns')
+conflicts=('heimdalldns')
+backup=('etc/heimdalldns/heimdalldns.yaml')
+source_x86_64=("${url}/releases/download/v${pkgver}/heimdalldns_${pkgver}_linux_amd64.tar.gz")
+source_aarch64=("${url}/releases/download/v${pkgver}/heimdalldns_${pkgver}_linux_arm64.tar.gz")
+source_armv7h=("${url}/releases/download/v${pkgver}/heimdalldns_${pkgver}_linux_armv7.tar.gz")
+source=("heimdalldns.yaml")
+sha256sums=('SKIP')
+sha256sums_x86_64=('SKIP')
+sha256sums_aarch64=('SKIP')
+sha256sums_armv7h=('SKIP')
+
+package() {
+	install -Dm755 heimdalldns "${pkgdir}/usr/bin/heimdalldns"
+	install -Dm644 deploy/heimdalldns.service "${pkgdir}/usr/lib/systemd/system/heimdalldns.service"
+	install -Dm644 heimdalldns.yaml "${pkgdir}/etc/heimdalldns/heimdalldns.yaml"
+	install -Dm644 heimdalldns.example.yaml "${pkgdir}/usr/share/doc/heimdalldns/heimdalldns.example.yaml"
+	install -Dm644 README.md "${pkgdir}/usr/share/doc/heimdalldns/README.md"
+	install -Dm644 deploy/wazuh/heimdalldns_rules.xml "${pkgdir}/usr/share/heimdalldns/wazuh/heimdalldns_rules.xml"
+}

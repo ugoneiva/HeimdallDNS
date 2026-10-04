@@ -145,7 +145,31 @@
   <rule id="112433" level="6">
     <if_sid>112430</if_sid>
     <field name="success">^false$</field>
-    <description>HeimdallDNS: operação no AD recusada: $(operation) em $(target): $(error)</description>
+    <description>HeimdallDNS: operação administrativa recusada: $(operation) em $(target): $(error)</description>
+    <group>audit,</group>
+  </rule>
+
+  <rule id="112434" level="8">
+    <if_sid>112430</if_sid>
+    <field name="operation">^backup\.restore$|^service\.restart$|^import\.pihole$</field>
+    <field name="success">^true$</field>
+    <description>HeimdallDNS: configuração substituída ($(operation)) por $(actor), $(srcip)</description>
+    <group>audit,config_changed,</group>
+  </rule>
+
+  <rule id="112435" level="8">
+    <if_sid>112430</if_sid>
+    <field name="operation">^dns\.upstream\.</field>
+    <field name="success">^true$</field>
+    <description>HeimdallDNS: servidores DNS de saída trocados para $(target) por $(actor), $(srcip)</description>
+    <group>audit,config_changed,</group>
+  </rule>
+
+  <rule id="112436" level="5">
+    <if_sid>112430</if_sid>
+    <field name="operation">^backup\.download$</field>
+    <field name="success">^true$</field>
+    <description>HeimdallDNS: backup baixado por $(actor), $(srcip)</description>
     <group>audit,</group>
   </rule>
 

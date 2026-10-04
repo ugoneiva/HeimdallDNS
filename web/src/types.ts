@@ -113,7 +113,7 @@ export type Rules = {
 
 export type Service = { id: string; name: string; group: string; domains: string[] }
 
-export type AuthState = { setup_required: boolean; authenticated: boolean; version: string; mode?: 'dns' | 'console'; mfa?: boolean }
+export type AuthState = { setup_required: boolean; authenticated: boolean; version: string; mode?: 'dns' | 'console'; mfa?: boolean; wizard?: boolean }
 
 export type DomainTest = {
   name: string
@@ -299,3 +299,43 @@ export type AuditEntry = {
   ok: boolean
   error?: string
 }
+
+export type LocalRecord = { name: string; type: 'A' | 'AAAA' | 'CNAME'; value: string }
+export type LocalRecords = { config: LocalRecord[]; records: LocalRecord[] }
+export type UpstreamState = {
+  servers: string[]
+  mode: string
+  custom: boolean
+  config_servers: string[]
+  config_mode: string
+  stats: { address: string; latency_ms: number; ok: number; fail: number; healthy: boolean }[]
+}
+
+export type BackupManifest = {
+  app: string
+  version: string
+  schema: number
+  created: string
+  hostname: string
+  full: boolean
+  has_config: boolean
+  encrypted: boolean
+}
+export type BackupFile = { name: string; size: number; created: string }
+export type BackupList = { files: BackupFile[]; dir: string; auto: boolean }
+export type RestoreState = { pending: BackupManifest | null; can_restart: boolean }
+
+export type PiholeExport = {
+  version: string
+  lists: { url: string; name: string; enabled: boolean; allow: boolean }[]
+  deny: string[]
+  allow: string[]
+  hosts: LocalRecord[]
+  reservations: { mac: string; ip: string; name?: string }[]
+  upstreams: string[]
+  clients: { ref: string; name: string }[]
+  groups: number
+  skipped: string[]
+}
+export type PiholePreview = { id: string; export: PiholeExport; plan: Record<string, number> }
+export type PiholeResult = { result: Record<string, number>; notes: string[] }

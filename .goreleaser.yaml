@@ -1,0 +1,124 @@
+# Versões do HeimdallDNS: binários estáticos, pacotes .deb/.rpm/Arch, imagem
+# Docker multiplataforma, checksums, SBOM e assinatura keyless (cosign).
+# Publicação: crie a tag (git tag v0.1.0 && git push --tags); o workflow
+# .github/workflows/release.yml roda o goreleaser.
+# Local, sem publicar: make snapshot
+version: 2
+
+project_name: heimdalldns
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - id: heimdalldns
+    main: ./cmd/heimdalldns
+    binary: heimdalldns
+    env: [CGO_ENABLED=0]
+    goos: [linux]
+    goarch: [amd64, arm64, arm]
+    goarm: ["7"]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X main.version={{ .Version }} -X main.commit={{ .ShortCommit }} -X main.date={{ .Date }}
+    mod_timestamp: "{{ .CommitTimestamp }}" # compilação reprodutível
+
+archives:
+  - id: tarball
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}"
+    files:
+      - README.md
+      - heimdalldns.example.yaml
+      - deploy/heimdalldns.service
+      - deploy/wazuh/*
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+sboms:
+  - artifacts: archive # SPDX de cada .tar.gz (precisa do syft no PATH)
+
+signs:
+  # Assinatura keyless pelo OIDC do GitHub Actions (cosign v2).
+  - cmd: cosign
+    signature: "${artifact}.sig"
+    certificate: "${artifact}.pem"
+    args: ["sign-blob", "--output-signature=${signature}", "--output-certificate=${certificate}", "${artifact}", "--yes"]
+    artifacts: checksum
+
+nfpms:
+  - id: packages
+    package_name: heimdalldns
+    file_name_template: "{{ .ConventionalFileName }}"
+    vendor: JLW Security
+    homepage: https://github.com/ugoneiva/HeimdallDNS
+    maintainer: JLW Security <marrakeshman@gmail.com>
+    description: |-
+      Servidor DNS com filtro (estilo Pi-hole), radar de dispositivos,
+      isolamento por aparelho, detecção de DGA/túnel, DoH/DoT, DHCP,
+      alta disponibilidade e integração com o Active Directory.
+    license: LicenseRef-Proprietary
+    section: net
+    priority: optional
+    formats: [deb, rpm, archlinux]
+    bindir: /usr/bin
+    contents:
+      - src: packaging/heimdalldns.yaml
+        dst: /etc/heimdalldns/heimdalldns.yaml
+        type: config|noreplace
+        file_info: {mode: 0644}
+      - src: deploy/heimdalldns.service
+        dst: /usr/lib/systemd/system/heimdalldns.service
+        file_info: {mode: 0644}
+      - src: heimdalldns.example.yaml
+        dst: /usr/share/doc/heimdalldns/heimdalldns.example.yaml
+      - src: README.md
+        dst: /usr/share/doc/heimdalldns/README.md
+      - src: deploy/wazuh/heimdalldns_rules.xml
+        dst: /usr/share/heimdalldns/wazuh/heimdalldns_rules.xml
+      - src: deploy/wazuh/README.md
+        dst: /usr/share/heimdalldns/wazuh/README.md
+    scripts:
+      postinstall: packaging/scripts/postinstall.sh
+      preremove: packaging/scripts/preremove.sh
+      postremove: packaging/scripts/postremove.sh
+    rpm:
+      group: System Environment/Daemons
+      summary: Servidor DNS com filtro e radar de dispositivos
+    archlinux:
+      packager: JLW Security <marrakeshman@gmail.com>
+      scripts:
+        postupgrade: packaging/scripts/postinstall.sh
+
+dockers_v2:
+  - id: imagem
+    images: ["ghcr.io/ugoneiva/heimdalldns"]
+    tags: ["{{ .Version }}", "{{ if not .Prerelease }}latest{{ end }}"]
+    dockerfile: packaging/docker/Dockerfile
+    extra_files: [packaging/docker/heimdalldns.yaml]
+    platforms: [linux/amd64, linux/arm64, linux/arm/v7]
+    labels:
+      org.opencontainers.image.title: HeimdallDNS
+      org.opencontainers.image.source: https://github.com/ugoneiva/HeimdallDNS
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+
+release:
+  draft: true # revisar as notas antes de publicar
+  prerelease: auto
+
+changelog:
+  sort: asc
+  groups:
+    - title: Novidades
+      regexp: '(?i)^.*(adiciona|novo|nova|integra|feat)'
+      order: 0
+    - title: Correções
+      regexp: '(?i)^.*(corrige|fix)'
+      order: 1
+    - title: Outras mudanças
+      order: 999

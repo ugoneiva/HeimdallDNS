@@ -67,25 +67,100 @@ func (m *member) record(d time.Duration, err error) {
 
 func (m *member) latencyNS() float64 { return math.Float64frombits(m.latency.Load()) }
 
-type Group struct {
+// set é uma configuração completa de upstreams; Reconfigure troca o set
+// inteiro de uma vez, sem parar as consultas em andamento.
+type set struct {
 	members []*member
 	mode    string
+	closers []dp.Upstream // bootstraps
+}
+
+type Group struct {
+	cur     atomic.Pointer[set]
 	timeout time.Duration
 	log     *slog.Logger
-	closers []dp.Upstream // bootstraps
+	kick    chan struct{} // pede uma medição já (depois de trocar os servidores)
+	mu      sync.Mutex    // serializa Reconfigure
 }
 
 func New(opts Options) (*Group, error) {
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
 	}
-	g := &Group{mode: opts.Mode, timeout: opts.Timeout, log: opts.Logger}
+	g := &Group{timeout: opts.Timeout, log: opts.Logger, kick: make(chan struct{}, 1)}
+	st, err := newSet(opts)
+	if err != nil {
+		return nil, err
+	}
+	g.cur.Store(st)
+	return g, nil
+}
 
+// Validate confere se os endereços são aceitos, sem abrir conexões.
+func Validate(servers []string, mode string) error {
+	switch mode {
+	case "", ModeFastest, ModeParallel, ModeFailover:
+	default:
+		return fmt.Errorf("modo %q: use fastest, parallel ou failover", mode)
+	}
+	if len(servers) == 0 {
+		return errors.New("informe ao menos um upstream")
+	}
+	for _, s := range servers {
+		u, err := dp.AddressToUpstream(s, &dp.Options{Timeout: time.Second})
+		if err != nil {
+			return fmt.Errorf("upstream %q: %w", s, err)
+		}
+		u.Close()
+	}
+	return nil
+}
+
+// Reconfigure troca servidores e modo. As consultas em andamento terminam no
+// set antigo, que é fechado depois de um tempo.
+func (g *Group) Reconfigure(opts Options) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if opts.Timeout == 0 {
+		opts.Timeout = g.timeout
+	}
+	if opts.Logger == nil {
+		opts.Logger = g.log
+	}
+	st, err := newSet(opts)
+	if err != nil {
+		return err
+	}
+	old := g.cur.Swap(st)
+	time.AfterFunc(2*g.timeout+time.Second, func() { old.close() })
+	select {
+	case g.kick <- struct{}{}:
+	default:
+	}
+	g.log.Info("upstreams trocados", "servidores", opts.Servers, "modo", opts.Mode)
+	return nil
+}
+
+// Config devolve os servidores e o modo em uso.
+func (g *Group) Config() ([]string, string) {
+	st := g.cur.Load()
+	out := make([]string, len(st.members))
+	for i, m := range st.members {
+		out[i] = m.addr
+	}
+	return out, st.mode
+}
+
+func newSet(opts Options) (*set, error) {
+	g := &set{mode: opts.Mode}
+	if g.mode == "" {
+		g.mode = ModeFastest
+	}
 	var boot multiResolver
 	for _, b := range opts.Bootstrap {
 		r, err := dp.NewUpstreamResolver(b, &dp.Options{Timeout: opts.Timeout, Logger: opts.Logger})
 		if err != nil {
-			g.Close()
+			g.close()
 			return nil, fmt.Errorf("bootstrap %q: %w", b, err)
 		}
 		g.closers = append(g.closers, r.Upstream)
@@ -98,7 +173,7 @@ func New(opts Options) (*Group, error) {
 	for _, s := range opts.Servers {
 		u, err := dp.AddressToUpstream(s, upOpts)
 		if err != nil {
-			g.Close()
+			g.close()
 			return nil, fmt.Errorf("upstream %q: %w", s, err)
 		}
 		m := &member{ups: u, addr: s}
@@ -113,12 +188,13 @@ func New(opts Options) (*Group, error) {
 
 // Exchange envia a consulta e devolve a resposta e o upstream que respondeu.
 func (g *Group) Exchange(ctx context.Context, req *dns.Msg) (*dns.Msg, string, error) {
-	if g.mode == ModeParallel && len(g.members) > 1 {
-		return g.parallel(ctx, req)
+	st := g.cur.Load()
+	if st.mode == ModeParallel && len(st.members) > 1 {
+		return g.parallel(ctx, st.members, req)
 	}
-	order := g.members
-	if g.mode == ModeFastest {
-		order = g.byLatency()
+	order := st.members
+	if st.mode == ModeFastest {
+		order = byLatency(st.members)
 	}
 	var (
 		last     *dns.Msg
@@ -158,7 +234,7 @@ func (g *Group) exchange(ctx context.Context, m *member, req *dns.Msg) (*dns.Msg
 	return resp, err
 }
 
-func (g *Group) parallel(ctx context.Context, req *dns.Msg) (*dns.Msg, string, error) {
+func (g *Group) parallel(ctx context.Context, members []*member, req *dns.Msg) (*dns.Msg, string, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	type result struct {
@@ -166,8 +242,8 @@ func (g *Group) parallel(ctx context.Context, req *dns.Msg) (*dns.Msg, string, e
 		addr string
 		err  error
 	}
-	ch := make(chan result, len(g.members))
-	for _, m := range g.members {
+	ch := make(chan result, len(members))
+	for _, m := range members {
 		go func() {
 			resp, err := g.exchange(ctx, m, req)
 			ch <- result{resp, m.addr, err}
@@ -175,7 +251,7 @@ func (g *Group) parallel(ctx context.Context, req *dns.Msg) (*dns.Msg, string, e
 	}
 	var errs []error
 	var servfail *result
-	for range g.members {
+	for range members {
 		r := <-ch
 		switch {
 		case r.err != nil:
@@ -195,8 +271,8 @@ func (g *Group) parallel(ctx context.Context, req *dns.Msg) (*dns.Msg, string, e
 // byLatency ordena: saudáveis primeiro; entre eles, a menor latência medida.
 // Quem ainda não foi medido vai para o fim: a medição é papel do HealthCheck,
 // não das consultas dos clientes.
-func (g *Group) byLatency() []*member {
-	out := slices.Clone(g.members)
+func byLatency(members []*member) []*member {
+	out := slices.Clone(members)
 	slices.SortStableFunc(out, func(a, b *member) int {
 		ha, hb := a.healthy.Load(), b.healthy.Load()
 		if ha != hb {
@@ -233,7 +309,7 @@ func (g *Group) HealthCheck(ctx context.Context, every time.Duration) {
 	// primeira consulta de um cliente).
 	probe := func() {
 		var wg sync.WaitGroup
-		for _, m := range g.members {
+		for _, m := range g.cur.Load().members {
 			wg.Go(func() {
 				req := new(dns.Msg)
 				req.SetQuestion("example.com.", dns.TypeA)
@@ -254,6 +330,8 @@ func (g *Group) HealthCheck(ctx context.Context, every time.Duration) {
 			return
 		case <-t.C:
 			probe()
+		case <-g.kick:
+			probe()
 		}
 	}
 }
@@ -267,8 +345,9 @@ type Stats struct {
 }
 
 func (g *Group) Stats() []Stats {
-	out := make([]Stats, len(g.members))
-	for i, m := range g.members {
+	members := g.cur.Load().members
+	out := make([]Stats, len(members))
+	for i, m := range members {
 		out[i] = Stats{
 			Address:   m.addr,
 			LatencyMS: math.Round(m.latencyNS()/1e4) / 100,
@@ -280,7 +359,9 @@ func (g *Group) Stats() []Stats {
 	return out
 }
 
-func (g *Group) Close() error {
+func (g *Group) Close() error { return g.cur.Load().close() }
+
+func (g *set) close() error {
 	var errs []error
 	for _, m := range g.members {
 		errs = append(errs, m.ups.Close())

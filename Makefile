@@ -1,7 +1,9 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-LDFLAGS := -s -w -X main.version=$(VERSION)
+COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null)
+DATE    ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
 
-.PHONY: build web web-dev release test bench run clean
+.PHONY: build web web-dev release snapshot test bench run clean
 
 # O painel compilado (internal/webui/dist) vai no repositório: "make build"
 # funciona sem Node. Depois de mexer em web/, rode "make web".
@@ -22,6 +24,11 @@ release:
 			-o bin/heimdalldns-linux-$$arch ./cmd/heimdalldns; \
 	done
 
+# Pacotes .deb, .rpm e Arch e os .tar.gz em dist/, sem publicar (precisa do
+# goreleaser: go install github.com/goreleaser/goreleaser/v2@latest).
+snapshot:
+	goreleaser release --snapshot --clean --skip=docker,sign,sbom
+
 test:
 	go vet ./...
 	go test -race ./...
@@ -34,4 +41,4 @@ run: build
 	./bin/heimdalldns -config heimdalldns.example.yaml -listen 127.0.0.1:25353 -data-dir ./data
 
 clean:
-	rm -rf bin data
+	rm -rf bin data dist

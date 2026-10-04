@@ -42,6 +42,7 @@ type Config struct {
 	DHCP         DHCP                `yaml:"dhcp"`
 	HA           HA                  `yaml:"ha"`
 	AD           AD                  `yaml:"ad"`
+	Backup       Backup              `yaml:"backup"`
 	LocalRecords map[string][]string `yaml:"local_records"`
 	DataDir      string              `yaml:"data_dir"`
 	Log          Log                 `yaml:"log"`
@@ -116,8 +117,16 @@ type API struct {
 	// Token de acesso. Vazio = gerado em <data_dir>/api.token na primeira vez.
 	Token string `yaml:"token"`
 	// HTTPS para o painel e a API (recomendado fora do localhost).
-	TLSCert string `yaml:"tls_cert"`
+	TLSCert string `yaml:"tls_cert"` // "auto" = autoassinado em <data_dir>/panel.crt
 	TLSKey  string `yaml:"tls_key"`
+}
+
+// Backup são as cópias automáticas (o painel também gera cópias na hora).
+type Backup struct {
+	Interval time.Duration `yaml:"interval"` // 0 desliga as automáticas
+	Keep     int           `yaml:"keep"`     // quantas guardar
+	Dir      string        `yaml:"dir"`      // "" = <data_dir>/backups
+	Full     bool          `yaml:"full"`     // inclui o histórico de consultas
 }
 
 type History struct {
@@ -242,6 +251,7 @@ func Default() *Config {
 			Retention:      7 * 24 * time.Hour,
 			StatsRetention: 90 * 24 * time.Hour,
 		},
+		Backup:  Backup{Interval: 24 * time.Hour, Keep: 7},
 		DataDir: "/var/lib/heimdalldns",
 		Log:     Log{Level: "info"},
 	}
@@ -265,6 +275,12 @@ func Load(path string) (*Config, error) {
 
 func (c *Config) Validate() error {
 	var errs []error
+	if c.Backup.Interval < 0 || (c.Backup.Interval > 0 && c.Backup.Interval < time.Hour) {
+		errs = append(errs, errors.New("backup.interval: use 0 (desligado) ou 1h ou mais"))
+	}
+	if c.Backup.Keep < 1 {
+		c.Backup.Keep = 1
+	}
 	if len(c.DNS.Listen) == 0 {
 		errs = append(errs, errors.New("dns.listen: informe ao menos um endereço"))
 	}
@@ -288,7 +304,7 @@ func (c *Config) Validate() error {
 	if c.DNS.ACME && c.DNS.PublicHost == "" {
 		errs = append(errs, errors.New("dns.acme precisa de dns.public_host"))
 	}
-	if (c.API.TLSCert == "") != (c.API.TLSKey == "") {
+	if c.API.TLSCert != "auto" && (c.API.TLSCert == "") != (c.API.TLSKey == "") {
 		errs = append(errs, errors.New("api.tls_cert e api.tls_key vão juntos"))
 	}
 	if c.DHCP.Enabled {

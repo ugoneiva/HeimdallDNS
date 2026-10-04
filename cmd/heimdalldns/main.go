@@ -20,11 +20,13 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/ugoneiva/HeimdallDNS/internal/ad"
 	"github.com/ugoneiva/HeimdallDNS/internal/api"
+	"github.com/ugoneiva/HeimdallDNS/internal/backup"
 	"github.com/ugoneiva/HeimdallDNS/internal/cache"
 	"github.com/ugoneiva/HeimdallDNS/internal/clients"
 	"github.com/ugoneiva/HeimdallDNS/internal/config"
@@ -44,7 +46,34 @@ import (
 	"github.com/ugoneiva/HeimdallDNS/internal/webui"
 )
 
-var version = "dev"
+// Preenchidos na compilação (-ldflags -X); ver Makefile e .goreleaser.yaml.
+var (
+	version = "dev"
+	commit  = ""
+	date    = ""
+)
+
+// errRestart pede para o main recarregar o binário (aplicar uma restauração).
+var errRestart = errors.New("reinício pedido")
+
+// autoBackup gera as cópias automáticas: a primeira 5 min depois de subir.
+func autoBackup(ctx context.Context, a backup.Auto, every time.Duration, log *slog.Logger) {
+	t := time.NewTimer(5 * time.Minute)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if name, err := a.RunOnce(); err != nil {
+				log.Error("backup automático falhou", "erro", err)
+			} else {
+				log.Info("backup automático gravado", "arquivo", name)
+			}
+			t.Reset(every)
+		}
+	}
+}
 
 const defaultConfig = "/etc/heimdalldns/heimdalldns.yaml"
 
@@ -57,6 +86,14 @@ func main() {
 		err = runCLI(os.Args[1], os.Args[2:])
 	default:
 		err = runServer()
+		if errors.Is(err, errRestart) {
+			// Mesmo processo (o systemd não percebe), binário e argumentos.
+			exe, xerr := os.Executable()
+			if xerr == nil {
+				xerr = syscall.Exec(exe, os.Args, os.Environ())
+			}
+			err = fmt.Errorf("reinício: %w", xerr)
+		}
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "heimdalldns:", err)
@@ -84,6 +121,9 @@ func runServer() error {
 	flag.Parse()
 	if *showVersion {
 		fmt.Println("heimdalldns", version)
+		if commit != "" {
+			fmt.Println("commit", commit, "compilado em", date)
+		}
 		return nil
 	}
 
@@ -120,12 +160,35 @@ func runServer() error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	var restartRequested atomic.Bool
+	restart := func() {
+		restartRequested.Store(true)
+		stop()
+	}
 
+	// Restauração pendente (pedida pelo painel): troca o banco antes de abrir.
+	if m, kept, err := backup.ApplyStaged(cfg.DataDir); err != nil {
+		log.Error("restauração pendente falhou; seguindo com o banco atual", "erro", err)
+	} else if m != nil {
+		log.Warn("backup restaurado", "de", m.Hostname, "criado", m.Created, "versao", m.Version, "banco_anterior", kept)
+	}
 	db, err := store.Open(filepath.Join(cfg.DataDir, "heimdall.db"))
 	if err != nil {
 		return err
 	}
 	defer db.Close()
+	backupDir := cfg.Backup.Dir
+	if backupDir == "" {
+		backupDir = filepath.Join(cfg.DataDir, "backups")
+	}
+	configPath := *cfgPath
+	if missing {
+		configPath = ""
+	}
+	if cfg.Backup.Interval > 0 {
+		go autoBackup(ctx, backup.Auto{Options: backup.Options{Store: db, TempDir: cfg.DataDir, ConfigPath: configPath,
+			Full: cfg.Backup.Full, Version: version}, Dir: backupDir, Keep: cfg.Backup.Keep}, cfg.Backup.Interval, log.With("componente", "backup"))
+	}
 
 	ups, err := upstream.New(upstream.Options{
 		Servers:   cfg.Upstream.Servers,
@@ -138,6 +201,9 @@ func runServer() error {
 		return err
 	}
 	defer ups.Close()
+	if err := api.LoadUpstream(db, ups); err != nil {
+		log.Warn("upstreams do painel inválidos; usando os do arquivo", "erro", err)
+	}
 	go ups.HealthCheck(ctx, cfg.Upstream.HealthInterval)
 
 	lists := make([]filter.ListSpec, len(cfg.Filter.Lists))
@@ -298,11 +364,22 @@ func runServer() error {
 		Logger:       log.With("componente", "dns"),
 		OnQuery:      onQuery(qlog, det, exp, log, cfg.Log.Queries),
 	})
+	if err := api.LoadLocal(db, local, srv); err != nil {
+		log.Warn("registros locais do painel inválidos; usando só os do arquivo", "erro", err)
+	}
 	if err := srv.Start(); err != nil {
+		if errors.Is(err, syscall.EADDRINUSE) {
+			return fmt.Errorf("%w\n  a porta já está em uso: no Ubuntu/Debian/Fedora costuma ser o systemd-resolved;\n"+
+				"  desligue o ouvinte dele (DNSStubListener=no em /etc/systemd/resolved.conf e systemctl restart systemd-resolved)\n"+
+				"  ou ponha em dns.listen só o IP da rede (ex.: [\"192.168.0.2:53\"])", err)
+		}
+		if errors.Is(err, syscall.EACCES) {
+			return fmt.Errorf("%w\n  portas abaixo de 1024 exigem root ou CAP_NET_BIND_SERVICE (o serviço do systemd já dá)", err)
+		}
 		return err
 	}
 
-	haDeps, err := newHA(ctx, cfg, db, flt, sec, reg, log.With("componente", "ha"))
+	haDeps, err := newHA(ctx, cfg, db, flt, sec, reg, srv, ups, local, log.With("componente", "ha"))
 	if err != nil {
 		return err
 	}
@@ -321,6 +398,11 @@ func runServer() error {
 		if err != nil {
 			return err
 		}
+		if cfg.API.TLSCert == "auto" {
+			if cfg.API.TLSCert, cfg.API.TLSKey, err = tlsconf.SelfSigned(cfg.DataDir); err != nil {
+				return fmt.Errorf("certificado do painel: %w", err)
+			}
+		}
 		ln, err := net.Listen("tcp", cfg.API.Listen)
 		if err != nil {
 			return fmt.Errorf("api %s: %w", cfg.API.Listen, err)
@@ -336,7 +418,11 @@ func runServer() error {
 					PublicHost: cfg.DNS.PublicHost, DoH: cfg.DNS.DoHListen != "", DoT: len(cfg.DNS.DoTListen) > 0,
 					DoHPort: portOf(cfg.DNS.DoHListen), DoTPort: portOf(firstOr(cfg.DNS.DoTListen)),
 				},
-				Logger: log.With("componente", "api"),
+				DataDir: cfg.DataDir, ConfigPath: configPath, BackupDir: backupDir, BackupKeep: cfg.Backup.Keep,
+				BackupAuto: cfg.Backup.Interval > 0, Restart: restart,
+				LocalConfig:    local,
+				UpstreamConfig: upstream.Options{Servers: cfg.Upstream.Servers, Bootstrap: cfg.Upstream.Bootstrap, Mode: cfg.Upstream.Mode},
+				Logger:         log.With("componente", "api"),
 			}),
 			ReadHeaderTimeout: 10 * time.Second,
 		}
@@ -379,6 +465,9 @@ func runServer() error {
 			<-expDone     // esvazia a fila de exportação
 			c := srv.Counters()
 			log.Info("consultas atendidas", "total", c.Total, "bloqueadas", c.Blocked, "isoladas", c.Isolated, "cache", c.Cached)
+			if restartRequested.Load() {
+				return errRestart
+			}
 			return nil
 		}
 	}
@@ -535,7 +624,7 @@ func newAD(ctx context.Context, cfg *config.Config, log *slog.Logger) (*ad.Clien
 // newHA liga a alta disponibilidade: o principal publica o snapshot; a
 // réplica o puxa e aplica (listas, regras, segurança, dispositivos, senha).
 func newHA(ctx context.Context, cfg *config.Config, db *store.Store, flt *filter.Manager, sec *security.Manager,
-	reg *clients.Registry, log *slog.Logger) (api.HA, error) {
+	reg *clients.Registry, srv *server.Server, ups *upstream.Group, localCfg map[string][]netip.Addr, log *slog.Logger) (api.HA, error) {
 	h := api.HA{Role: cfg.HA.Role}
 	switch cfg.HA.Role {
 	case ha.RolePrimary:
@@ -554,6 +643,12 @@ func newHA(ctx context.Context, cfg *config.Config, db *store.Store, flt *filter
 			if _, err = db.GetJSON(api.PasswordKey, &snap.PasswordHash); err != nil {
 				return snap, err
 			}
+			if _, err = db.GetJSON(api.LocalKey, &snap.Local); err != nil {
+				return snap, err
+			}
+			if _, err = db.GetJSON(api.UpstreamKey, &snap.Upstream); err != nil {
+				return snap, err
+			}
 			var m api.MFA
 			if _, err = db.GetJSON(api.MFAKey, &m); err != nil {
 				return snap, err
@@ -564,7 +659,7 @@ func newHA(ctx context.Context, cfg *config.Config, db *store.Store, flt *filter
 		}, log)
 		log.Info("nó principal: réplicas sincronizam em /api/sync/snapshot")
 	case ha.RoleReplica:
-		var lastLists, lastRules string
+		var lastLists, lastRules, lastLocal, lastUps string
 		r, err := ha.NewReplica(ha.ReplicaOptions{
 			PrimaryURL: cfg.HA.PrimaryURL, Token: cfg.HA.SyncToken, InsecureTLS: cfg.HA.InsecureTLS, Logger: log,
 			Apply: func(s ha.Snapshot) error {
@@ -589,6 +684,28 @@ func newHA(ctx context.Context, cfg *config.Config, db *store.Store, flt *filter
 				}
 				if err := sec.SetSettings(s.Security); err != nil {
 					return err
+				}
+				if b, _ := json.Marshal(s.Local); string(b) != lastLocal {
+					if err := db.SetJSON(api.LocalKey, s.Local); err != nil {
+						return err
+					}
+					if err := api.LoadLocal(db, localCfg, srv); err != nil {
+						return err
+					}
+					lastLocal = string(b)
+				}
+				if b, _ := json.Marshal(s.Upstream); string(b) != lastUps {
+					if err := db.SetJSON(api.UpstreamKey, s.Upstream); err != nil {
+						return err
+					}
+					opts := upstream.Options{Servers: cfg.Upstream.Servers, Bootstrap: cfg.Upstream.Bootstrap, Mode: cfg.Upstream.Mode}
+					if len(s.Upstream.Servers) > 0 {
+						opts = upstream.Options{Servers: s.Upstream.Servers, Mode: s.Upstream.Mode}
+					}
+					if err := ups.Reconfigure(opts); err != nil {
+						return err
+					}
+					lastUps = string(b)
 				}
 				if s.PasswordHash != "" {
 					if err := db.SetJSON(api.PasswordKey, s.PasswordHash); err != nil {
@@ -735,6 +852,10 @@ Comandos:
   services                          serviços para regras (service:tiktok, service:social…)
   passwd                            define uma nova senha do painel (recupera o acesso)
   mfa-off                           desliga a verificação em duas etapas (perdeu o celular)
+  backup  [-o arquivo] [-full] [-encrypt | -passphrase-file f]
+                                    baixa um backup (banco + configuração)
+  restore <arquivo> [-passphrase-file f] [-restart]
+                                    restaura um backup (vale ao reiniciar)
   console [-listen] [-data-dir]     roda o console de MSP (vários HeimdallDNS num painel só)
 
 <ref> é o id, IP, MAC ou nome do dispositivo.

@@ -354,3 +354,42 @@ func TestNRDBlockAndThreatCategory(t *testing.T) {
 		t.Errorf("upstream = %d (só a liberada vai)", n.Load())
 	}
 }
+
+func TestLocalCNAME(t *testing.T) {
+	addr, n := fakeUpstream(t)
+	ups, err := upstream.New(upstream.Options{Servers: []string{addr}, Timeout: 2 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ups.Close() })
+	srv := New(Options{Listen: []string{"127.0.0.1:0"}, Allowed: []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")},
+		Cache: cache.New(cache.Options{Size: 100}), Upstream: ups})
+	if err := srv.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { srv.Shutdown(t.Context()) })
+	dst := srv.Addrs()[0].String()
+	srv.SetLocal(&Local{
+		Hosts: map[string][]netip.Addr{"nas.casa.": {netip.MustParseAddr("192.168.0.10")}},
+		CNAME: map[string]string{"arquivos.casa.": "nas.casa.", "fotos.casa.": "arquivos.casa.", "site.casa.": "externo.com."},
+	})
+	r := query(t, dst, "fotos.casa", dns.TypeA, "udp")
+	if len(r.Answer) != 3 || r.Answer[2].(*dns.A).A.String() != "192.168.0.10" || r.Answer[0].(*dns.CNAME).Target != "arquivos.casa." {
+		t.Fatalf("cadeia local = %v", r.Answer)
+	}
+	if r.Answer[2].Header().Name != "nas.casa." {
+		t.Errorf("o A tem que ser do destino: %v", r.Answer[2])
+	}
+	r = query(t, dst, "site.casa", dns.TypeA, "udp")
+	if len(r.Answer) != 2 || r.Answer[1].(*dns.A).A.String() != "1.2.3.4" || n.Load() != 1 {
+		t.Fatalf("destino externo = %v (consultas ao upstream: %d)", r.Answer, n.Load())
+	}
+	query(t, dst, "site.casa", dns.TypeA, "udp")
+	if n.Load() != 1 {
+		t.Error("o destino externo deveria vir do cache na segunda vez")
+	}
+	srv.SetLocal(nil)
+	if r := query(t, dst, "nas.casa", dns.TypeA, "udp"); firstA(t, r) != "1.2.3.4" {
+		t.Error("depois de limpar, nas.casa vai para o upstream")
+	}
+}

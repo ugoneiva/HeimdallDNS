@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
@@ -47,9 +48,19 @@ type Deps struct {
 	AD        *ad.Client       // nil = sem integração com o Active Directory
 	Audit     AuditExporter    // operações administrativas para o SIEM (opcional)
 	Encrypted Encrypted
-	UI        fs.FS // arquivos do painel; nil = sem painel
-	Secure    bool  // HTTPS: o cookie de sessão leva a marca Secure
-	Logger    *slog.Logger
+	// Backup e restauração (DataDir vazio = sem as rotas).
+	DataDir    string
+	ConfigPath string
+	BackupDir  string
+	BackupKeep int
+	BackupAuto bool
+	Restart    func() // reinicia o serviço; nil = não suportado
+	// Valores do arquivo de configuração (o painel pode sobrepor).
+	LocalConfig    map[string][]netip.Addr
+	UpstreamConfig upstream.Options
+	UI             fs.FS // arquivos do painel; nil = sem painel
+	Secure         bool  // HTTPS: o cookie de sessão leva a marca Secure
+	Logger         *slog.Logger
 }
 
 // NRDInfo é o que a API usa do verificador de domínios recém-registrados.
@@ -63,6 +74,7 @@ type api struct {
 	guard     guard
 	setupMu   sync.Mutex
 	setupCode string // código para definir a senha na primeira abertura
+	imports   importer
 }
 
 func New(d Deps) http.Handler {
@@ -106,6 +118,12 @@ func build(d Deps) (*api, http.Handler) {
 	api.HandleFunc("GET /api/ha", a.haStatus)
 	if d.AD != nil {
 		a.adRoutes(api)
+	}
+	a.localRoutes(api)
+	api.HandleFunc("POST /api/wizard/done", a.wizardDone)
+	if d.DataDir != "" {
+		a.backupRoutes(api)
+		a.importRoutes(api)
 	}
 	api.HandleFunc("GET /api/dhcp", a.dhcpState)
 	api.HandleFunc("POST /api/dhcp/reservations", a.dhcpReserve)

@@ -27,6 +27,9 @@ func (a *api) haStatus(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// localOnly são operações do próprio nó, liberadas também na réplica.
+var localOnly = map[string]bool{"/api/backup": true, "/api/backups": true, "/api/restore": true, "/api/restart": true}
+
 // replicaGuard deixa a réplica só leitura: a configuração vem do principal.
 // Reconhecer os alertas do próprio nó e atualizar as listas continuam livres.
 func (a *api) replicaGuard(next http.Handler) http.Handler {
@@ -39,7 +42,8 @@ func (a *api) replicaGuard(next http.Handler) http.Handler {
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet || r.Method == http.MethodHead ||
-			strings.HasPrefix(r.URL.Path, "/api/security/events/") || r.URL.Path == "/api/lists/refresh" {
+			strings.HasPrefix(r.URL.Path, "/api/security/events/") || r.URL.Path == "/api/lists/refresh" ||
+			localOnly[r.URL.Path] {
 			next.ServeHTTP(w, r)
 			return
 		}

@@ -8,7 +8,7 @@ import { Button, Card, ErrorNote, Field, Input, Select, StatusBadge, Switch, Tex
 import { useDevices } from './Devices'
 
 // Listas conhecidas, para adicionar com um clique.
-const suggestions = [
+export const listSuggestions = [
   { name: 'StevenBlack Unified', url: 'https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts', note: 'Anúncios e malware (formato hosts)' },
   { name: 'HaGeZi Pro', url: 'https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.txt', note: 'Anúncios, rastreadores e telemetria' },
   {
@@ -181,7 +181,7 @@ function ListsCard() {
         </form>
         <ErrorNote error={add.error || patch.error || del.error} />
         <div className="flex flex-wrap gap-2">
-          {suggestions
+          {listSuggestions
             .filter((s) => !have.has(s.url))
             .map((s) => (
               <button

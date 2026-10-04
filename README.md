@@ -81,7 +81,8 @@ Embutido no próprio binário, em `http://127.0.0.1:8053` por padrão. Tema escu
   - regras próprias globais;
   - teste **"o que acontece com este domínio?"**, global ou por dispositivo, mostrando a regra que decide.
 - **Active Directory** (opcional): usuários, grupos, DNS do AD e auditoria; veja abaixo.
-- **Configurações:** tema, troca de senha, verificação em duas etapas, informações do servidor e sair.
+- **DNS:** upstreams (predefinições cifradas ou próprios, trocados na hora, com latência e saúde de cada um) e registros locais A/AAAA/CNAME.
+- **Configurações:** tema, troca de senha, verificação em duas etapas, backup e restauração, migração do Pi-hole, informações do servidor e sair.
 
 **Primeiro acesso:**
 1. Ao abrir o painel sem senha definida, ele pede um **código de configuração** que o serviço imprime no log (`journalctl -u heimdalldns | grep codigo`). Assim, ninguém da rede define a senha antes do dono.
@@ -216,12 +217,21 @@ heimdalldns rules "TV da sala" -deny service:social,service:tiktok
 heimdalldns isolate "TV da sala" -mode refused -reason "beacon suspeito" -except windowsupdate.com
 heimdalldns release "TV da sala"
 heimdalldns status
+heimdalldns backup -encrypt -o copia.tar.gz.age       # backup cifrado na hora
+heimdalldns restore copia.tar.gz.age -restart         # restaura e reinicia
 ```
 
 `<ref>` aceita id, IP, MAC ou nome. Em produção, rode com `sudo` (o token fica no diretório de dados do serviço).
 
 | Rota | Função |
 |---|---|
+| `GET/PUT /api/dns/upstream` · `DELETE` | upstreams em uso (`servers`, `mode`); `DELETE` volta aos do arquivo |
+| `GET/PUT /api/dns/local` | registros locais (`records`: `name`, `type` A/AAAA/CNAME, `value`) |
+| `POST /api/backup` | gera e baixa um backup (`full`, `passphrase`) |
+| `GET/POST /api/backups` · `GET /api/backups/{nome}` | cópias automáticas: lista, gera agora, baixa |
+| `GET/POST/DELETE /api/restore` · `POST /api/restart` | restauração em duas etapas (multipart `passphrase` + `file`) e reinício |
+| `POST /api/import/pihole` · `POST /api/import/pihole/{id}/apply` | prévia do Teleporter (multipart `file`) e aplicação das partes escolhidas |
+| `GET /api/audit` | auditoria das operações administrativas |
 | `GET /api/status` | contadores, cache, upstreams, regras |
 | `GET /api/clients` · `GET /api/clients/{ref}` | dispositivos |
 | `PATCH /api/clients/{ref}` | `name`, `allow`, `deny`, `skip_global_lists` |
@@ -285,17 +295,111 @@ Opções da linha de comando:
 
 A configuração comentada está em [`heimdalldns.example.yaml`](heimdalldns.example.yaml).
 
-## Instalação como serviço
+## Instalação
+
+### Por pacote (recomendado)
+
+Cada versão publica pacotes para **amd64, arm64 e armv7** (Raspberry Pi 3/4/5):
+
+```sh
+# Debian, Ubuntu, Raspberry Pi OS
+sudo apt install ./heimdalldns_0.1.0_amd64.deb
+# Fedora, RHEL, Rocky, Alma
+sudo dnf install ./heimdalldns-0.1.0-1.x86_64.rpm
+# Arch
+sudo pacman -U heimdalldns-0.1.0-1-x86_64.pkg.tar.zst
+
+sudo systemctl enable --now heimdalldns
+journalctl -u heimdalldns | grep codigo     # código do primeiro acesso
+```
+
+Depois, abra `https://<ip-do-servidor>:8053`. O pacote instala:
+
+| Arquivo | O que é |
+|---|---|
+| `/usr/bin/heimdalldns` | o binário (estático, sem dependências) |
+| `/etc/heimdalldns/heimdalldns.yaml` | configuração mínima, **preservada nas atualizações** |
+| `/usr/lib/systemd/system/heimdalldns.service` | o serviço, sem root, só com a permissão da porta 53 |
+| `/usr/share/doc/heimdalldns/` | README e a configuração completa comentada |
+| `/usr/share/heimdalldns/wazuh/` | regras para o Wazuh |
+
+- **Atualização:** o pacote reinicia o serviço sozinho se ele estiver rodando.
+- **Remoção:** os dados ficam em `/var/lib/private/heimdalldns`.
+- **Porta 53 ocupada:** no Ubuntu, Debian e Fedora, o `systemd-resolved` ocupa `127.0.0.53:53`. Desligue o ouvinte dele (`DNSStubListener=no` em `/etc/systemd/resolved.conf`) ou ponha só o IP da rede em `dns.listen`. Se esquecer, o HeimdallDNS explica isso no erro.
+
+Cada versão também traz `checksums.txt` assinado (cosign, sem chave, pela identidade do GitHub Actions) e SBOM (SPDX) de cada arquivo.
+
+### Docker
+
+```sh
+docker run -d --name heimdalldns --network host -v heimdalldns:/data \
+  --restart unless-stopped ghcr.io/ugoneiva/heimdalldns:latest
+```
+
+- **`--network host`:** sem ela, o radar vê o IP do Docker em vez do IP de cada aparelho.
+- **Usuário:** a imagem roda sem root e sem shell (distroless).
+- **Configuração própria:** monte por cima de `/etc/heimdalldns/heimdalldns.yaml`.
+
+### Manual
 
 ```sh
 make build
-sudo install -m 755 bin/heimdalldns /usr/local/bin/
-sudo install -D -m 644 heimdalldns.example.yaml /etc/heimdalldns/heimdalldns.yaml
+sudo install -m 755 bin/heimdalldns /usr/bin/
+sudo install -D -m 644 packaging/heimdalldns.yaml /etc/heimdalldns/heimdalldns.yaml
 sudo install -m 644 deploy/heimdalldns.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now heimdalldns
 ```
 
-A unit roda o serviço sem root (`DynamicUser`), só com a permissão de abrir a porta 53. `systemctl reload heimdalldns` baixa as listas de novo.
+`systemctl reload heimdalldns` baixa as listas de novo.
+
+### Primeiro acesso
+
+1. O painel pede o código de configuração impresso no log e a senha nova.
+2. Em seguida abre um **assistente**, que aparece só numa instalação nova:
+   - para onde as consultas vão (Cloudflare, Quad9, Google, AdGuard ou servidores próprios; sempre cifrado);
+   - quais listas de bloqueio usar;
+   - importar um Pi-hole;
+   - como apontar a rede para o HeimdallDNS.
+
+**HTTPS do painel:** com `api.tls_cert: auto` (padrão do pacote), o HeimdallDNS gera um certificado autoassinado em `<data_dir>/panel.crt` para o nome da máquina e os IPs dela, e renova antes de vencer. O navegador pede para aceitar o certificado uma vez. Com certificado próprio, informe `tls_cert` e `tls_key`.
+
+### Migrar do Pi-hole
+
+No Pi-hole, gere o backup em **Settings → Teleporter → Export**: a v6 gera um `.zip`, a v5 um `.tar.gz`. No HeimdallDNS, use **Configurações → Migrar do Pi-hole** ou o próprio assistente.
+
+O painel mostra uma prévia, e você escolhe o que trazer:
+
+| Do Pi-hole | Vira aqui |
+|---|---|
+| Adlists | listas de bloqueio, inclusive as desativadas |
+| Domínios exatos (allow/deny) | regras próprias: aqui, um domínio vale também para os subdomínios |
+| Regex | `(\.|^)x\.com$` vira `x.com`; as demais vão como regex RE2. Opções do Pi-hole (`;querytype=`) ficam de fora, com aviso |
+| Local DNS (A/AAAA e CNAME) | registros locais (tela DNS) |
+| DHCP estático | reservas de DHCP |
+| Upstreams | opcional: substituem os atuais |
+| Comentários dos clientes | nomes dos aparelhos já vistos aqui |
+
+Não têm equivalente e são avisados na prévia:
+- as listas de liberação;
+- os grupos do Pi-hole (aqui, use as regras por dispositivo).
+
+### Backup e restauração
+
+- **Cópias automáticas diárias** em `<data_dir>/backups`, as 7 mais novas: banco sem o histórico de consultas, mais o arquivo de configuração. Ajuste em `backup:`.
+- **Backup na hora:**
+  - pelo painel, em **Configurações → Backup**;
+  - pela CLI, com `sudo heimdalldns backup -encrypt` (`-full` inclui o histórico).
+
+  A senha cifra o arquivo no formato [age](https://age-encryption.org); dá para abrir também com `age -d`. Use sempre senha: o backup leva o hash da senha do painel e os tokens dos aparelhos. As sessões abertas nunca vão no backup.
+- **Restauração:**
+  - pelo painel;
+  - pela CLI, com `sudo heimdalldns restore arquivo.tar.gz.age -restart`.
+
+  Passo a passo:
+  1. O servidor confere o arquivo (integridade e versão do banco).
+  2. O arquivo fica pronto e vale no reinício. O reinício é feito pelo próprio processo, sem precisar do systemd.
+  3. O banco anterior fica guardado como `heimdall.db.antes-<data>`.
+  4. O arquivo de configuração do backup não é aplicado sozinho: ele fica em `/etc`, que o serviço não pode alterar.
 
 ## Estrutura
 
@@ -318,6 +422,8 @@ internal/tlsconf    certificado do DoT/DoH: arquivo com recarga ou ACME
 internal/dhcp       servidor DHCPv4: concessões, reservas, DNS local
 internal/ha         alta disponibilidade: snapshot, long-poll e aplicação na réplica
 internal/console    console de MSP: leitura dos clientes e fila única de alertas
+internal/backup     backup (tar.gz, cifra age), restauração em duas etapas, cópias automáticas
+internal/pihole     leitura do Teleporter do Pi-hole (v5 e v6)
 internal/ad         Active Directory: LDAPS, usuários, grupos e DNS (dnsNode) com travas
 internal/api        API REST, login do painel e arquivos do painel
 internal/webui      painel compilado, embutido no binário (gerado por "make web")
@@ -336,4 +442,4 @@ O painel compilado vai no repositório, então `make build` (ou `go install`) fu
 
 ## Próximas etapas
 
-1. Pacotes de instalação (.deb, .rpm, AUR, imagem Docker) e versão 0.1.
+1. Publicar a versão 0.1 (tag `v0.1.0`; o workflow gera pacotes, imagem e assinaturas).
