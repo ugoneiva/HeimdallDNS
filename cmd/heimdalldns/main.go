@@ -237,6 +237,9 @@ func runServer() error {
 	if err != nil {
 		return err
 	}
+	if err := api.LoadGroups(db, reg); err != nil {
+		log.Warn("grupos de dispositivos inválidos; seguindo sem eles", "erro", err)
+	}
 
 	exp, err := export.New(export.Options{
 		File: cfg.Export.File, Syslog: cfg.Export.Syslog, Queries: cfg.Export.Queries,
@@ -648,6 +651,9 @@ func newHA(ctx context.Context, cfg *config.Config, db *store.Store, flt *filter
 			if _, err = db.GetJSON(api.UpstreamKey, &snap.Upstream); err != nil {
 				return snap, err
 			}
+			if _, err = db.GetJSON(api.GroupsKey, &snap.Groups); err != nil {
+				return snap, err
+			}
 			if snap.Users, err = db.Users(); err != nil {
 				return snap, err
 			}
@@ -667,7 +673,7 @@ func newHA(ctx context.Context, cfg *config.Config, db *store.Store, flt *filter
 		}, log)
 		log.Info("nó principal: réplicas sincronizam em /api/sync/snapshot")
 	case ha.RoleReplica:
-		var lastLists, lastRules, lastLocal, lastUps, lastUsers, lastTokens string
+		var lastLists, lastRules, lastLocal, lastUps, lastUsers, lastTokens, lastGroups string
 		r, err := ha.NewReplica(ha.ReplicaOptions{
 			PrimaryURL: cfg.HA.PrimaryURL, Token: cfg.HA.SyncToken, InsecureTLS: cfg.HA.InsecureTLS, Logger: log,
 			Apply: func(s ha.Snapshot) error {
@@ -714,6 +720,15 @@ func newHA(ctx context.Context, cfg *config.Config, db *store.Store, flt *filter
 						return err
 					}
 					lastUps = string(b)
+				}
+				if b, _ := json.Marshal(s.Groups); string(b) != lastGroups {
+					if err := db.SetJSON(api.GroupsKey, s.Groups); err != nil {
+						return err
+					}
+					if err := reg.SetGroups(s.Groups); err != nil {
+						return err
+					}
+					lastGroups = string(b)
 				}
 				if b, _ := json.Marshal(s.Users); string(b) != lastUsers {
 					// Mantém o que é deste nó: último acesso e o passo do MFA já

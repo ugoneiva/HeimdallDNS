@@ -41,6 +41,29 @@ export type Settings = {
   deny?: string[]
   skip_global_lists?: boolean
   access_token?: string
+  group?: string
+}
+
+export type GroupSchedule = {
+  name: string
+  days?: number[]
+  start: string
+  end: string
+  block_all?: boolean
+  allow?: string[]
+  deny?: string[]
+  disabled?: boolean
+}
+export type DeviceGroup = {
+  id: string
+  name: string
+  description?: string
+  allow?: string[]
+  deny?: string[]
+  skip_global_lists?: boolean
+  schedules?: GroupSchedule[]
+  members: string[]
+  active: string[]
 }
 
 export type Device = {

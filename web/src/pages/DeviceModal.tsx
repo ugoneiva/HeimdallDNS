@@ -7,6 +7,7 @@ import { ago, fmtDateTime, fmtInt, fmtPct, modeLabel } from '../lib/format'
 import { Button, ErrorNote, Field, Input, Modal, Segmented, Select, StatusBadge, Switch, Textarea, cx } from '../components/ui'
 import { RankList } from '../components/charts'
 import { RoamingTab } from './RoamingTab'
+import { useGroups } from './Groups'
 import { useADInfo } from './ActiveDirectory'
 
 type Tab = 'summary' | 'rules' | 'isolate' | 'roaming'
@@ -211,6 +212,8 @@ function RulesTab({ d }: { d: Device }) {
   const [deny, setDeny] = useState((d.settings.deny ?? []).join('\n'))
   const [allow, setAllow] = useState((d.settings.allow ?? []).join('\n'))
   const [useGlobal, setUseGlobal] = useState(!d.settings.skip_global_lists)
+  const [group, setGroup] = useState(d.settings.group ?? '')
+  const groupsQ = useGroups()
   const denyList = lines(deny)
   const toggleService = (rule: string) =>
     setDeny(denyList.includes(rule) ? denyList.filter((r) => r !== rule).join('\n') : [...denyList, rule].join('\n'))
@@ -223,9 +226,18 @@ function RulesTab({ d }: { d: Device }) {
       className="space-y-5"
       onSubmit={(e) => {
         e.preventDefault()
-        save.mutate({ path: '', method: 'PATCH', body: { deny: denyList, allow: lines(allow), skip_global_lists: !useGlobal } })
+        save.mutate({ path: '', method: 'PATCH', body: { deny: denyList, allow: lines(allow), skip_global_lists: !useGlobal, group } })
       }}
     >
+      <Field label="Grupo" hint="As regras e os horários do grupo valem depois das regras deste aparelho.">
+        <Select
+          label="Grupo"
+          value={group}
+          onChange={setGroup}
+          className="w-full"
+          options={[{ value: '', label: 'Nenhum' }, ...(groupsQ.data ?? []).map((g) => ({ value: g.id, label: g.name }))]}
+        />
+      </Field>
       <div>
         <p className="mb-2 text-xs font-medium text-ink-2">Bloquear serviços neste dispositivo</p>
         <div className="space-y-2">

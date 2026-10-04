@@ -48,6 +48,7 @@ type Settings struct {
 	Allow           []string  `json:"allow,omitempty"`
 	Deny            []string  `json:"deny,omitempty"`
 	SkipGlobalLists bool      `json:"skip_global_lists,omitempty"`
+	Group           string    `json:"group,omitempty"` // id do grupo (regras e horários)
 	// AccessToken identifica o aparelho fora da rede (DoH /dns-query/<token>,
 	// DoT <token>.<host público>), com a política dele em qualquer lugar.
 	AccessToken string `json:"access_token,omitempty"`
@@ -60,8 +61,11 @@ type Policy struct {
 	Isolated    bool
 	IsolateMode string
 	SkipGlobal  bool
+	Group       string // nome do grupo, se houver
 	exceptions  *filter.Matcher
 	rules       *filter.Matcher
+	group       *compiledGroup
+	now         func() time.Time
 }
 
 // IsolatedFor diz se a consulta deve ser barrada pelo isolamento.
@@ -72,12 +76,16 @@ func (p *Policy) IsolatedFor(name string) bool {
 	return p.exceptions.Match(name).Verdict == filter.Pass
 }
 
-// Match aplica as regras próprias do cliente.
+// Match aplica as regras próprias do cliente e, se ele tiver grupo, os
+// horários ativos e as regras do grupo.
 func (p *Policy) Match(name string) filter.Result {
 	if p == nil {
 		return filter.Result{}
 	}
-	return p.rules.Match(name)
+	if res := p.rules.Match(name); res.Verdict != filter.Pass || p.group == nil {
+		return res
+	}
+	return p.group.match(name, p.now())
 }
 
 // Record é o cliente como vai para o banco.
@@ -172,7 +180,7 @@ func (c *Client) displayLocked() string {
 }
 
 // rebuildLocked recompila a política a partir de settings.
-func (c *Client) rebuildLocked(defaultMode string) []string {
+func (c *Client) rebuildLocked(r *Registry) []string {
 	s := c.settings
 	p := &Policy{
 		ClientID:    c.id,
@@ -180,9 +188,14 @@ func (c *Client) rebuildLocked(defaultMode string) []string {
 		Isolated:    s.Isolated,
 		IsolateMode: s.IsolateMode,
 		SkipGlobal:  s.SkipGlobalLists,
+		now:         r.now,
+	}
+	if g := r.groups.Load().byID[s.Group]; g != nil && s.Group != "" {
+		p.group, p.Group = g, g.Name
+		p.SkipGlobal = p.SkipGlobal || g.SkipGlobalLists
 	}
 	if p.IsolateMode == "" {
-		p.IsolateMode = defaultMode
+		p.IsolateMode = r.opts.IsolateMode
 	}
 	var invalid []string
 	var bad []string
@@ -241,6 +254,7 @@ type Options struct {
 	// OnNew avisa de um dispositivo novo de verdade: só depois de procurar o MAC,
 	// para um aparelho conhecido que trocou de IP não parecer novo.
 	OnNew  func(id string, ip netip.Addr)
+	Now    func() time.Time // relógio dos horários dos grupos (nil = time.Now)
 	Logger *slog.Logger
 }
 
@@ -255,6 +269,7 @@ type Registry struct {
 	byTok map[string]*Client
 
 	fresh     map[string]bool // criados e ainda não confirmados como novos (ver OnNew)
+	groups    atomic.Pointer[groupSet]
 	vendors   atomic.Pointer[OUI]
 	enrich    chan netip.Addr
 	neighMu   sync.Mutex
@@ -279,6 +294,7 @@ func NewRegistry(opts Options) (*Registry, error) {
 		fresh:  map[string]bool{},
 		enrich: make(chan netip.Addr, 1024),
 	}
+	r.groups.Store(&groupSet{byID: map[string]*compiledGroup{}})
 	if opts.Store == nil {
 		return r, nil
 	}
@@ -294,7 +310,7 @@ func NewRegistry(opts Options) (*Registry, error) {
 		c.lastSeen.Store(rec.LastSeen.UnixNano())
 		c.queries.Store(rec.Queries)
 		c.blocked.Store(rec.Blocked)
-		if bad := c.rebuildLocked(opts.IsolateMode); len(bad) > 0 {
+		if bad := c.rebuildLocked(r); len(bad) > 0 {
 			r.log.Warn("regras inválidas no cliente", "cliente", rec.ID, "regras", bad)
 		}
 		r.byID[c.id] = c
@@ -336,7 +352,7 @@ func (r *Registry) newClient(ip netip.Addr, t time.Time) *Client {
 	if ip.IsLoopback() {
 		c.hostname = "localhost"
 	}
-	c.rebuildLocked(r.opts.IsolateMode)
+	c.rebuildLocked(r)
 	r.byID[c.id] = c
 	r.byIP[ip] = c
 	r.mu.Unlock()
@@ -460,7 +476,7 @@ func (r *Registry) Update(c *Client, f func(*Settings) error) error {
 		}
 	}
 	c.settings = s
-	c.rebuildLocked(r.opts.IsolateMode)
+	c.rebuildLocked(r)
 	rec := c.recordLocked()
 	c.mu.Unlock()
 	if r.opts.Store != nil {
@@ -691,7 +707,7 @@ func (r *Registry) applyNeighbor(ip netip.Addr) {
 		cur.mu.Unlock()
 		n := &Client{id: r.newIDLocked(), mac: mac, vendor: vendor, ips: []netip.Addr{ip}, firstSeen: time.Now()}
 		n.lastSeen.Store(time.Now().UnixNano())
-		n.rebuildLocked(r.opts.IsolateMode)
+		n.rebuildLocked(r)
 		n.markDirty()
 		r.byID[n.id], r.byIP[ip], r.byMAC[mac] = n, n, n
 		r.fresh[n.id] = true // aparelho desconhecido: confirmNew avisa
@@ -742,7 +758,7 @@ func (r *Registry) resolvePTR(ctx context.Context, c *Client, ip netip.Addr) {
 	if c.hostname != name {
 		c.hostname = name
 		c.markDirty()
-		c.rebuildLocked(r.opts.IsolateMode) // o nome mostrado pode ter mudado
+		c.rebuildLocked(r) // o nome mostrado pode ter mudado
 	}
 	c.mu.Unlock()
 }
@@ -791,7 +807,7 @@ func (r *Registry) LearnLease(ip netip.Addr, mac, hostname string) {
 	if r.byIP[ip] == nil && r.byMAC[mac] == nil {
 		c := &Client{id: r.newIDLocked(), mac: mac, ips: []netip.Addr{ip}, firstSeen: time.Now()}
 		c.vendor = r.vendors.Load().Lookup(mac)
-		c.rebuildLocked(r.opts.IsolateMode)
+		c.rebuildLocked(r)
 		c.markDirty()
 		r.byID[c.id], r.byIP[ip], r.byMAC[mac] = c, c, c
 		created = true
@@ -810,7 +826,7 @@ func (r *Registry) LearnLease(ip netip.Addr, mac, hostname string) {
 			c.hostname = hostname
 			c.ptrAt = time.Now() // o nome do DHCP vale mais que o PTR do roteador
 			c.markDirty()
-			c.rebuildLocked(r.opts.IsolateMode)
+			c.rebuildLocked(r)
 		}
 		c.mu.Unlock()
 	}
@@ -908,7 +924,7 @@ func (r *Registry) ApplyRemote(states []State) error {
 		if t := c.settings.AccessToken; t != "" {
 			r.byTok[t] = c
 		}
-		c.rebuildLocked(r.opts.IsolateMode)
+		c.rebuildLocked(r)
 		save = append(save, c.recordLocked())
 		c.mu.Unlock()
 	}

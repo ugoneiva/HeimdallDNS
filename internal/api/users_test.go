@@ -283,3 +283,33 @@ func TestADLogin(t *testing.T) {
 func mustAddr(s string) netip.Addr { return netip.MustParseAddr(s) }
 
 func jsonDecodeBody(resp *http.Response, v any) error { return json.NewDecoder(resp.Body).Decode(v) }
+
+func TestGroupsAPI(t *testing.T) {
+	p := newPanel(t)
+	login(t, p)
+	body := `{"groups":[{"name":"Visitantes","deny":["service:social"],"schedules":[{"name":"sempre","start":"00:00","end":"00:00","deny":["apostas.com"]}]}]}`
+	r, out := p.do(t, "PUT", "/api/groups", body)
+	if r.StatusCode != 200 {
+		t.Fatalf("salvar grupos: %v", out)
+	}
+	gs := p.reg.Groups()
+	if len(gs) != 1 || gs[0].ID == "" {
+		t.Fatalf("grupos = %+v", gs)
+	}
+	c := p.reg.Observe(mustAddr("192.168.0.44"), time.Now())
+	if r, out := p.do(t, "PATCH", "/api/clients/"+c.ID(), `{"group":"nao-existe"}`); r.StatusCode != 400 {
+		t.Errorf("grupo inexistente: %d %v", r.StatusCode, out)
+	}
+	if r, out := p.do(t, "PATCH", "/api/clients/"+c.ID(), `{"group":"`+gs[0].ID+`"}`); r.StatusCode != 200 {
+		t.Fatalf("pôr no grupo: %v", out)
+	}
+	for name, rule := range map[string]string{"www.instagram.com": "grupo Visitantes", "apostas.com": "horário sempre"} {
+		_, out := p.do(t, "GET", "/api/filter/test?name="+name+"&client=192.168.0.44", "")
+		if out["verdict"] != "blocked" || !strings.Contains(fmt.Sprint(out["rule"]), rule) {
+			t.Errorf("%s = %v", name, out)
+		}
+	}
+	if r, _ := p.do(t, "PUT", "/api/groups", `{"groups":[{"name":"X","schedules":[{"name":"y","start":"99:00","end":"07:00","block_all":true}]}]}`); r.StatusCode != 400 {
+		t.Error("horário inválido deveria falhar")
+	}
+}

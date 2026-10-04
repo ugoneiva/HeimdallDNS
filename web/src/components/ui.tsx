@@ -39,6 +39,7 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 export function Button({ variant = 'secondary', size = 'md', loading, icon, children, className, disabled, ...rest }: ButtonProps) {
   return (
     <button
+      type="button" // dentro de formulário, só envia quem pedir type="submit"
       {...rest}
       disabled={disabled || loading}
       className={cx(

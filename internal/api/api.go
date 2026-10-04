@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/netip"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -124,6 +125,8 @@ func build(d Deps) (*api, http.Handler) {
 	a.localRoutes(api)
 	a.userRoutes(api)
 	api.HandleFunc("POST /api/wizard/done", a.wizardDone)
+	api.HandleFunc("GET /api/groups", a.listGroups)
+	api.HandleFunc("PUT /api/groups", a.putGroups)
 	if d.DataDir != "" {
 		a.backupRoutes(api)
 		a.importRoutes(api)
@@ -225,6 +228,7 @@ func (a *api) patchClient(w http.ResponseWriter, r *http.Request) {
 		Allow           *[]string `json:"allow"`
 		Deny            *[]string `json:"deny"`
 		SkipGlobalLists *bool     `json:"skip_global_lists"`
+		Group           *string   `json:"group"`
 	}
 	if !readJSON(w, r, &body) {
 		return
@@ -241,6 +245,12 @@ func (a *api) patchClient(w http.ResponseWriter, r *http.Request) {
 		}
 		if body.SkipGlobalLists != nil {
 			s.SkipGlobalLists = *body.SkipGlobalLists
+		}
+		if body.Group != nil {
+			if *body.Group != "" && !slices.ContainsFunc(a.Clients.Groups(), func(g clients.Group) bool { return g.ID == *body.Group }) {
+				return errors.New("grupo não encontrado")
+			}
+			s.Group = *body.Group
 		}
 		return nil
 	})

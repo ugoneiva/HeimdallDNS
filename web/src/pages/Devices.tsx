@@ -7,6 +7,7 @@ import { ago, fmtInt, fmtPct } from '../lib/format'
 import { Card, Input, Segmented, StatusBadge, Switch, cx } from '../components/ui'
 import { Radar } from '../components/Radar'
 import { DeviceModal } from './DeviceModal'
+import { GroupsCard } from './Groups'
 
 type Filter = 'all' | 'active' | 'isolated' | 'rules'
 
@@ -178,6 +179,8 @@ export function Devices({ openId, onOpen }: { openId: string | null; onOpen: (id
           )}
         </div>
       </Card>
+
+      <GroupsCard />
 
       <DeviceModal device={open} onClose={() => onOpen(null)} />
     </div>

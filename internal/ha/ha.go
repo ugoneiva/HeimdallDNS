@@ -53,6 +53,7 @@ type Snapshot struct {
 	Clients  []clients.State        `json:"clients"`
 	Local    []store.LocalRecord    `json:"local,omitempty"`
 	Upstream store.UpstreamSettings `json:"upstream"`
+	Groups   []clients.Group        `json:"groups"`
 }
 
 // stamp calcula a versão (hash do conteúdo).
