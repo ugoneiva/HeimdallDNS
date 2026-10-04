@@ -196,6 +196,8 @@ func runServer() error {
 		Mode:      cfg.Upstream.Mode,
 		Timeout:   cfg.Upstream.Timeout,
 		Logger:    log.With("componente", "upstream"),
+
+		RequireDNSSEC: cfg.Upstream.RequireDNSSEC,
 	})
 	if err != nil {
 		return err
@@ -366,6 +368,15 @@ func runServer() error {
 		Timeout:      cfg.Upstream.Timeout + time.Second,
 		Logger:       log.With("componente", "dns"),
 		OnQuery:      onQuery(qlog, det, exp, log, cfg.Log.Queries),
+		RateLimit:    rateLimit(cfg),
+		OnRateLimit: func(ip netip.Addr, id string, dropped uint64) {
+			sec.Raise(security.Alert{
+				Kind: security.KindFlood, Severity: security.SevMedium, ClientID: id, ClientIP: ip.String(),
+				Summary: fmt.Sprintf("%s passou do limite de %g consultas/s; o excesso está sendo recusado",
+					sec.ClientName(id, ip.String()), cfg.DNS.RateLimit.QPS),
+				Details: map[string]any{"dropped": dropped, "qps_limit": cfg.DNS.RateLimit.QPS},
+			})
+		},
 	})
 	if err := api.LoadLocal(db, local, srv); err != nil {
 		log.Warn("registros locais do painel inválidos; usando só os do arquivo", "erro", err)
@@ -820,6 +831,16 @@ func newDHCP(cfg *config.Config, db *store.Store, reg *clients.Registry, log *sl
 		Routers: routers, DNS: dnsServers, Domain: c.Domain, LeaseTime: c.LeaseTime, Store: db, Logger: log,
 		OnLease: func(l dhcp.Lease) { reg.LearnLease(l.IP, l.MAC, l.Hostname) },
 	})
+}
+
+func rateLimit(cfg *config.Config) server.RateLimit {
+	rl := server.RateLimit{QPS: cfg.DNS.RateLimit.QPS, Burst: cfg.DNS.RateLimit.Burst}
+	for _, p := range cfg.DNS.RateLimit.Exempt {
+		if pfx, err := netip.ParsePrefix(p); err == nil {
+			rl.Exempt = append(rl.Exempt, pfx.Masked())
+		}
+	}
+	return rl
 }
 
 func dhcpLookup(s *dhcp.Server) func(string) []netip.Addr {

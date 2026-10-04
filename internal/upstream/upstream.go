@@ -33,6 +33,9 @@ type Options struct {
 	Mode      string
 	Timeout   time.Duration
 	Logger    *slog.Logger
+	// RequireDNSSEC usa só os upstreams que validam DNSSEC (testados na
+	// partida e a cada 6 h). Se nenhum validar, usa todos e avisa no log.
+	RequireDNSSEC bool
 }
 
 type member struct {
@@ -43,7 +46,15 @@ type member struct {
 	ok      atomic.Uint64
 	fail    atomic.Uint64
 	healthy atomic.Bool
+	dnssec  atomic.Int32 // dnssecUnknown, dnssecYes ou dnssecNo
 }
+
+// Resultado do teste de validação DNSSEC de cada upstream.
+const (
+	dnssecUnknown int32 = iota
+	dnssecYes
+	dnssecNo
+)
 
 func (m *member) record(d time.Duration, err error) {
 	if err != nil {
@@ -70,9 +81,10 @@ func (m *member) latencyNS() float64 { return math.Float64frombits(m.latency.Loa
 // set é uma configuração completa de upstreams; Reconfigure troca o set
 // inteiro de uma vez, sem parar as consultas em andamento.
 type set struct {
-	members []*member
-	mode    string
-	closers []dp.Upstream // bootstraps
+	members       []*member
+	mode          string
+	closers       []dp.Upstream // bootstraps
+	requireDNSSEC bool
 }
 
 type Group struct {
@@ -127,6 +139,9 @@ func (g *Group) Reconfigure(opts Options) error {
 	if opts.Logger == nil {
 		opts.Logger = g.log
 	}
+	// A exigência de DNSSEC vem da configuração: trocar os servidores pelo
+	// painel não a desliga.
+	opts.RequireDNSSEC = opts.RequireDNSSEC || g.cur.Load().requireDNSSEC
 	st, err := newSet(opts)
 	if err != nil {
 		return err
@@ -152,7 +167,7 @@ func (g *Group) Config() ([]string, string) {
 }
 
 func newSet(opts Options) (*set, error) {
-	g := &set{mode: opts.Mode}
+	g := &set{mode: opts.Mode, requireDNSSEC: opts.RequireDNSSEC}
 	if g.mode == "" {
 		g.mode = ModeFastest
 	}
@@ -189,12 +204,13 @@ func newSet(opts Options) (*set, error) {
 // Exchange envia a consulta e devolve a resposta e o upstream que respondeu.
 func (g *Group) Exchange(ctx context.Context, req *dns.Msg) (*dns.Msg, string, error) {
 	st := g.cur.Load()
-	if st.mode == ModeParallel && len(st.members) > 1 {
-		return g.parallel(ctx, st.members, req)
+	members := st.usable()
+	if st.mode == ModeParallel && len(members) > 1 {
+		return g.parallel(ctx, members, req)
 	}
-	order := st.members
+	order := members
 	if st.mode == ModeFastest {
-		order = byLatency(st.members)
+		order = byLatency(members)
 	}
 	var (
 		last     *dns.Msg
@@ -322,6 +338,8 @@ func (g *Group) HealthCheck(ctx context.Context, every time.Duration) {
 		wg.Wait()
 	}
 	probe()
+	g.CheckDNSSEC(ctx)
+	lastCheck := time.Now()
 	t := time.NewTicker(every)
 	defer t.Stop()
 	for {
@@ -330,8 +348,14 @@ func (g *Group) HealthCheck(ctx context.Context, every time.Duration) {
 			return
 		case <-t.C:
 			probe()
+			if time.Since(lastCheck) > dnssecEvery {
+				g.CheckDNSSEC(ctx)
+				lastCheck = time.Now()
+			}
 		case <-g.kick:
 			probe()
+			g.CheckDNSSEC(ctx) // servidores novos
+			lastCheck = time.Now()
 		}
 	}
 }
@@ -342,10 +366,13 @@ type Stats struct {
 	OK        uint64  `json:"ok"`
 	Fail      uint64  `json:"fail"`
 	Healthy   bool    `json:"healthy"`
+	DNSSEC    string  `json:"dnssec"` // yes, no ou unknown (ainda não testado)
+	InUse     bool    `json:"in_use"` // false quando excluído por não validar DNSSEC
 }
 
 func (g *Group) Stats() []Stats {
-	members := g.cur.Load().members
+	st := g.cur.Load()
+	members := st.members
 	out := make([]Stats, len(members))
 	for i, m := range members {
 		out[i] = Stats{
@@ -354,6 +381,8 @@ func (g *Group) Stats() []Stats {
 			OK:        m.ok.Load(),
 			Fail:      m.fail.Load(),
 			Healthy:   m.healthy.Load(),
+			DNSSEC:    [...]string{"unknown", "yes", "no"}[m.dnssec.Load()],
+			InUse:     inUse(st, m),
 		}
 	}
 	return out

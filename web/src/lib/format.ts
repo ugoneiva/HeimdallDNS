@@ -63,6 +63,7 @@ export const statusLabel: Record<string, string> = {
   isolated: 'Isolada',
   local: 'Local',
   refused: 'Recusada',
+  ratelimited: 'Limitada (excesso)',
   error: 'Falha',
   invalid: 'Inválida',
 }
@@ -82,6 +83,7 @@ export const kindLabel: Record<string, string> = {
   dns_tunnel: 'Possível túnel DNS',
   nrd: 'Domínio recém-registrado',
   new_device: 'Dispositivo novo',
+  query_flood: 'Excesso de consultas',
 }
 
 export const severityLabel: Record<string, string> = {

@@ -363,7 +363,7 @@ export type UpstreamState = {
   custom: boolean
   config_servers: string[]
   config_mode: string
-  stats: { address: string; latency_ms: number; ok: number; fail: number; healthy: boolean }[]
+  stats: { address: string; latency_ms: number; ok: number; fail: number; healthy: boolean; dnssec: 'yes' | 'no' | 'unknown'; in_use: boolean }[]
 }
 
 export type BackupManifest = {

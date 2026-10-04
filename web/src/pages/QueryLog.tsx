@@ -20,7 +20,7 @@ const types = ['', 'A', 'AAAA', 'HTTPS', 'CNAME', 'TXT', 'MX', 'PTR', 'SRV', 'SO
 
 function statusTone(s: string) {
   if (isBlockedStatus(s)) return 'critical' as const
-  if (s === 'error' || s === 'refused') return 'warning' as const
+  if (s === 'error' || s === 'refused' || s === 'ratelimited') return 'warning' as const
   if (s === 'cached' || s === 'stale' || s === 'local') return 'accent' as const
   return 'neutral' as const
 }

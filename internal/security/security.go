@@ -24,6 +24,7 @@ const (
 	KindTunnel    = "dns_tunnel"     // muitos subdomínios longos e únicos: exfiltração/túnel por DNS
 	KindNRD       = "nrd"            // domínio registrado há poucos dias
 	KindNewDevice = "new_device"     // dispositivo novo na rede
+	KindFlood     = "query_flood"    // passou do limite de consultas por segundo
 )
 
 // Gravidades (do status palette do painel; nunca só cor).
@@ -35,7 +36,7 @@ const (
 )
 
 // Kinds lista os tipos na ordem de exibição.
-var Kinds = []string{KindThreat, KindDGA, KindTunnel, KindNRD, KindNewDevice}
+var Kinds = []string{KindThreat, KindDGA, KindTunnel, KindNRD, KindNewDevice, KindFlood}
 
 // Alert é o que uma detecção levanta.
 type Alert struct {

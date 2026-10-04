@@ -135,11 +135,20 @@ function UpstreamCard() {
                     {s.address}
                   </span>
                   <span className="tabular text-ink-2">{s.latency_ms ? `${s.latency_ms} ms` : '—'}</span>
+                  {s.dnssec === 'yes' ? (
+                    <StatusBadge tone="good">DNSSEC</StatusBadge>
+                  ) : s.dnssec === 'no' ? (
+                    <StatusBadge tone="warning">sem DNSSEC</StatusBadge>
+                  ) : null}
+                  {!s.in_use && <StatusBadge tone="neutral">fora de uso</StatusBadge>}
                   {s.healthy ? <StatusBadge tone="good">ok</StatusBadge> : <StatusBadge tone="critical">sem resposta</StatusBadge>}
                 </li>
               ))}
             </ul>
-            <p className="mt-2 text-[11px] text-muted">A troca vale na hora, sem reiniciar; o cache é limpo.</p>
+            <p className="mt-2 text-[11px] text-muted">
+              A troca vale na hora, sem reiniciar; o cache é limpo. DNSSEC: cada servidor é testado na partida e a cada 6 h (um domínio com
+              assinatura quebrada tem que falhar). Com <code className="font-mono">upstream.require_dnssec</code>, os que não validam ficam fora de uso.
+            </p>
           </div>
         </div>
       )}

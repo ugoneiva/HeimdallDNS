@@ -29,11 +29,12 @@ const (
 	StatusCached    = "cached"
 	StatusStale     = "stale" // do cache, vencida, renovando em segundo plano
 	StatusBlocked   = "blocked"
-	StatusIsolated  = "isolated" // cliente isolado (kill switch)
-	StatusLocal     = "local"    // registro local
-	StatusRefused   = "refused"  // cliente fora das redes permitidas
-	StatusError     = "error"    // upstream falhou (SERVFAIL)
-	StatusInvalid   = "invalid"  // pergunta malformada
+	StatusIsolated  = "isolated"    // cliente isolado (kill switch)
+	StatusLocal     = "local"       // registro local
+	StatusRefused   = "refused"     // cliente fora das redes permitidas
+	StatusError     = "error"       // upstream falhou (SERVFAIL)
+	StatusInvalid   = "invalid"     // pergunta malformada
+	StatusLimited   = "ratelimited" // cliente passou do limite de consultas por segundo
 )
 
 // ednsSize é o tamanho de UDP anunciado (recomendação do DNS Flag Day 2020).
@@ -94,6 +95,10 @@ type Options struct {
 	Timeout    time.Duration
 	Logger     *slog.Logger
 	OnQuery    func(Event) // chamado para cada consulta; não deve bloquear
+	RateLimit  RateLimit
+	// OnRateLimit avisa (no máximo uma vez por minuto por IP) que um cliente
+	// passou do limite; dropped é quantas consultas foram recusadas.
+	OnRateLimit func(ip netip.Addr, clientID string, dropped uint64)
 }
 
 type Counters struct {
@@ -118,6 +123,7 @@ type Server struct {
 	dohAddr  net.Addr
 
 	localTab atomic.Pointer[Local]
+	limiter  *rateLimiter
 
 	total, forwarded, cached, blocked, isolated, local, refused, errs atomic.Uint64
 }
@@ -147,7 +153,7 @@ func New(opts Options) *Server {
 	if opts.Filter == nil {
 		opts.Filter = func() *filter.Matcher { return nil }
 	}
-	s := &Server{opts: opts, log: opts.Logger}
+	s := &Server{opts: opts, log: opts.Logger, limiter: newRateLimiter(opts.RateLimit)}
 	s.SetLocal(&Local{Hosts: opts.LocalRecords})
 	return s
 }
@@ -274,7 +280,19 @@ func (s *Server) answer(r *dns.Msg, o origin) *dns.Msg {
 			cl = s.opts.Clients.Observe(o.client, ev.Time)
 		}
 	}
-	resp := s.handle(r, &ev, cl.Policy(), trusted)
+	limited := false
+	if trusted && s.limiter != nil {
+		ok, alert, dropped := s.limiter.allow(o.client.Unmap(), ev.Time)
+		limited = !ok
+		if alert && s.opts.OnRateLimit != nil {
+			id := ""
+			if cl != nil {
+				id = cl.ID()
+			}
+			go s.opts.OnRateLimit(o.client.Unmap(), id, dropped)
+		}
+	}
+	resp := s.handle(r, &ev, cl.Policy(), trusted, limited)
 	if resp != nil {
 		s.finalize(r, resp, o.proto)
 		ev.Rcode = dns.RcodeToString[resp.Rcode]
@@ -296,7 +314,7 @@ func (s *Server) answer(r *dns.Msg, o origin) *dns.Msg {
 		cl.CountBlocked()
 	case StatusLocal:
 		s.local.Add(1)
-	case StatusRefused:
+	case StatusRefused, StatusLimited:
 		s.refused.Add(1)
 	case StatusError:
 		s.errs.Add(1)
@@ -308,7 +326,7 @@ func (s *Server) answer(r *dns.Msg, o origin) *dns.Msg {
 }
 
 // handle devolve a resposta (sem EDNS; write cuida disso) ou nil para não responder.
-func (s *Server) handle(r *dns.Msg, ev *Event, pol *clients.Policy, trusted bool) *dns.Msg {
+func (s *Server) handle(r *dns.Msg, ev *Event, pol *clients.Policy, trusted, limited bool) *dns.Msg {
 	if !trusted {
 		ev.Status = StatusRefused
 		return reply(r, dns.RcodeRefused)
@@ -330,6 +348,10 @@ func (s *Server) handle(r *dns.Msg, ev *Event, pol *clients.Policy, trusted bool
 
 	if pol != nil {
 		ev.ClientID, ev.Display = pol.ClientID, pol.Display
+	}
+	if limited {
+		ev.Status, ev.Rule = StatusLimited, "limite de consultas por segundo"
+		return reply(r, dns.RcodeRefused)
 	}
 	// Isolamento vem antes de tudo, inclusive dos registros locais.
 	if pol.IsolatedFor(ev.Name) {

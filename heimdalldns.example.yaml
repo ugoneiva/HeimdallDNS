@@ -20,6 +20,13 @@ dns:
   tls_key: ""
   acme: false               # ou certificado automático do Let's Encrypt (precisa da 443 aberta)
   acme_email: ""
+  # Limite de consultas por cliente (IP); acima dele, REFUSED e um alerta por
+  # minuto. Protege contra aparelho infectado ou em loop. O loopback nunca é
+  # limitado. Se o roteador repassa a rede inteira por um IP só, libere-o.
+  rate_limit:
+    qps: 100                # 0 desliga
+    burst: 1000             # rajada aceita (ex.: aparelho ligando)
+    exempt: []              # ex.: ["192.168.0.1/32"]
 
 upstream:
   # DNS comum (1.1.1.1:53), DoH (https://), DoT (tls://), DoQ (quic://) ou DNSCrypt (sdns://).
@@ -32,6 +39,10 @@ upstream:
   mode: fastest
   timeout: 3s
   health_interval: 30s
+  # Usar só upstreams que validam DNSSEC. Cada um é testado na partida e a cada
+  # 6 h (domínio com assinatura quebrada tem que falhar; assinado tem que vir
+  # validado); o resultado aparece na tela DNS. Se nenhum validar, usa todos.
+  require_dnssec: false
 
 cache:
   size: 20000       # número de respostas

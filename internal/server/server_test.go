@@ -393,3 +393,65 @@ func TestLocalCNAME(t *testing.T) {
 		t.Error("depois de limpar, nas.casa vai para o upstream")
 	}
 }
+
+func TestRateLimit(t *testing.T) {
+	l := newRateLimiter(RateLimit{QPS: 2, Burst: 3, Exempt: []netip.Prefix{netip.MustParsePrefix("10.9.0.0/16")}})
+	ip := netip.MustParseAddr("192.168.0.50")
+	t0 := time.Unix(1_000_000, 0)
+	for i := range 3 {
+		if ok, _, _ := l.allow(ip, t0); !ok {
+			t.Fatalf("consulta %d dentro do balde foi recusada", i)
+		}
+	}
+	ok, alert, dropped := l.allow(ip, t0)
+	if ok || !alert || dropped != 1 {
+		t.Fatalf("4ª consulta: ok=%v alerta=%v recusadas=%d", ok, alert, dropped)
+	}
+	if ok, alert, _ := l.allow(ip, t0); ok || alert {
+		t.Error("o aviso sai no máximo uma vez por minuto")
+	}
+	if ok, _, _ := l.allow(ip, t0.Add(600*time.Millisecond)); !ok {
+		t.Error("depois de 0,6 s a 2/s deveria ter uma ficha de novo")
+	}
+	for _, free := range []string{"127.0.0.1", "::1", "10.9.1.1"} {
+		for range 10 {
+			if ok, _, _ := l.allow(netip.MustParseAddr(free), t0); !ok {
+				t.Fatalf("%s não deveria ser limitado", free)
+			}
+		}
+	}
+	if newRateLimiter(RateLimit{}) != nil {
+		t.Error("QPS 0 desliga")
+	}
+
+	// No servidor: a consulta além do limite volta REFUSED e com o status próprio.
+	var events []Event
+	upAddr, _ := fakeUpstream(t)
+	ups, _ := upstream.New(upstream.Options{Servers: []string{upAddr}, Timeout: time.Second})
+	t.Cleanup(func() { ups.Close() })
+	srv := New(Options{Allowed: []netip.Prefix{netip.MustParsePrefix("192.168.0.0/16")}, Cache: cache.New(cache.Options{Size: 10}), Upstream: ups,
+		RateLimit: RateLimit{QPS: 1, Burst: 1}, OnQuery: func(e Event) { events = append(events, e) }})
+	q := new(dns.Msg)
+	q.SetQuestion("bloqueado.test.", dns.TypeA)
+	o := origin{client: ip, proto: "udp"}
+	srv.answer(q, o) // gasta a ficha
+	if r := srv.answer(q, o); r.Rcode != dns.RcodeRefused || events[1].Status != StatusLimited {
+		t.Errorf("acima do limite: rcode %d, status %s", r.Rcode, events[1].Status)
+	}
+}
+
+func BenchmarkRateLimitParallel(b *testing.B) {
+	l := newRateLimiter(RateLimit{QPS: 1e9, Burst: 1e9})
+	ips := make([]netip.Addr, 256)
+	for i := range ips {
+		ips[i] = netip.AddrFrom4([4]byte{192, 168, 0, byte(i)})
+	}
+	now := time.Now()
+	b.RunParallel(func(pb *testing.PB) {
+		i := 0
+		for pb.Next() {
+			l.allow(ips[i&255], now)
+			i++
+		}
+	})
+}

@@ -44,6 +44,7 @@ systemctl restart wazuh-manager
 | 112415 | 7 | domínio recém-registrado (T1583.001) |
 | 112416 | 10 | domínio registrado há menos de 7 dias |
 | 112417 | 4 | dispositivo novo na rede |
+| 112418 | 7 | dispositivo passou do limite de consultas por segundo (MITRE T1499) |
 | 112420 | 14 | o HeimdallDNS isolou o dispositivo automaticamente |
 | 112430 | 3 | operação administrativa registrada na auditoria |
 | 112431 | 8 | alteração no Active Directory feita pelo HeimdallDNS (T1098) |

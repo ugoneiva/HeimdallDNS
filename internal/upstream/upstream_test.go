@@ -2,8 +2,11 @@ package upstream
 
 import (
 	"math"
+	"net"
 	"testing"
 	"time"
+
+	"github.com/miekg/dns"
 )
 
 func TestByLatencyOrder(t *testing.T) {
@@ -67,4 +70,57 @@ func TestReconfigure(t *testing.T) {
 	if Validate(nil, "") == nil || Validate([]string{"1.1.1.1"}, "aleatorio") == nil || Validate([]string{"1.1.1.1"}, "") != nil {
 		t.Error("Validate")
 	}
+}
+
+// fakeResolver imita um resolvedor que valida (ou não) DNSSEC.
+func fakeResolver(t *testing.T, validates bool) string {
+	t.Helper()
+	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &dns.Server{PacketConn: pc, Handler: dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {
+		m := new(dns.Msg)
+		m.SetReply(r)
+		if validates && r.Question[0].Name == dnssecBroken {
+			m.Rcode = dns.RcodeServerFailure
+		} else {
+			m.Answer = []dns.RR{&dns.A{Hdr: dns.RR_Header{Name: r.Question[0].Name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60}, A: net.IPv4(1, 2, 3, 4)}}
+			m.AuthenticatedData = validates
+		}
+		w.WriteMsg(m)
+	})}
+	go srv.ActivateAndServe()
+	t.Cleanup(func() { srv.Shutdown() })
+	return pc.LocalAddr().String()
+}
+
+func TestDNSSECCheck(t *testing.T) {
+	good, bad := fakeResolver(t, true), fakeResolver(t, false)
+	g, err := New(Options{Servers: []string{bad, good}, Mode: ModeFailover, Timeout: time.Second, RequireDNSSEC: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Close()
+	// Antes de testar, ninguém validou: usa todos (não derruba a rede).
+	if _, addr, err := g.Exchange(t.Context(), question("exemplo.com.")); err != nil || addr != bad {
+		t.Fatalf("antes do teste: %s %v", addr, err)
+	}
+	g.CheckDNSSEC(t.Context())
+	st := map[string]Stats{}
+	for _, s := range g.Stats() {
+		st[s.Address] = s
+	}
+	if st[good].DNSSEC != "yes" || st[bad].DNSSEC != "no" || st[bad].InUse || !st[good].InUse {
+		t.Fatalf("resultado = %+v", st)
+	}
+	if _, addr, _ := g.Exchange(t.Context(), question("exemplo.com.")); addr != good {
+		t.Errorf("com DNSSEC exigido, foi para %s", addr)
+	}
+}
+
+func question(name string) *dns.Msg {
+	m := new(dns.Msg)
+	m.SetQuestion(name, dns.TypeA)
+	return m
 }

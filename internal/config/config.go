@@ -63,6 +63,15 @@ type DNS struct {
 	TLSKey       string   `yaml:"tls_key"`
 	ACME         bool     `yaml:"acme"` // certificado automático (Let's Encrypt, TLS-ALPN-01 na 443)
 	ACMEEmail    string   `yaml:"acme_email"`
+
+	RateLimit RateLimit `yaml:"rate_limit"`
+}
+
+// RateLimit limita as consultas por cliente (IP). O loopback nunca é limitado.
+type RateLimit struct {
+	QPS    float64  `yaml:"qps"`    // 0 desliga
+	Burst  int      `yaml:"burst"`  // rajada aceita antes de limitar
+	Exempt []string `yaml:"exempt"` // redes liberadas (ex.: o roteador que repassa a rede inteira)
 }
 
 // EncryptedEnabled diz se DoT ou DoH estão ligados.
@@ -74,6 +83,9 @@ type Upstream struct {
 	Mode           string        `yaml:"mode"`
 	Timeout        time.Duration `yaml:"timeout"`
 	HealthInterval time.Duration `yaml:"health_interval"`
+	// RequireDNSSEC usa só os upstreams que validam DNSSEC (testados na
+	// partida e a cada 6 h; se nenhum validar, usa todos e avisa).
+	RequireDNSSEC bool `yaml:"require_dnssec"`
 }
 
 type Cache struct {
@@ -221,6 +233,7 @@ func Default() *Config {
 			Listen:    []string{":53"},
 			BlockMode: BlockNull,
 			BlockTTL:  10,
+			RateLimit: RateLimit{QPS: 100, Burst: 1000},
 		},
 		Upstream: Upstream{
 			Servers: []string{
@@ -289,6 +302,14 @@ func (c *Config) Validate() error {
 	var errs []error
 	if l := c.AD.Login; l.Enabled && (!c.AD.Enabled || len(l.AdminGroups)+len(l.OperatorGroups)+len(l.ViewerGroups) == 0) {
 		errs = append(errs, errors.New("ad.login: precisa de ad.enabled e de ao menos um grupo (admin_groups, operator_groups ou viewer_groups)"))
+	}
+	if c.DNS.RateLimit.QPS < 0 || c.DNS.RateLimit.Burst < 0 {
+		errs = append(errs, errors.New("dns.rate_limit: qps e burst não podem ser negativos"))
+	}
+	for _, p := range c.DNS.RateLimit.Exempt {
+		if _, err := netip.ParsePrefix(p); err != nil {
+			errs = append(errs, fmt.Errorf("dns.rate_limit.exempt: %q não é uma rede (ex.: 192.168.0.1/32)", p))
+		}
 	}
 	if c.Backup.Interval < 0 || (c.Backup.Interval > 0 && c.Backup.Interval < time.Hour) {
 		errs = append(errs, errors.New("backup.interval: use 0 (desligado) ou 1h ou mais"))

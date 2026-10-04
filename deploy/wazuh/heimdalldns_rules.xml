@@ -104,9 +104,19 @@
     <group>asset_inventory,</group>
   </rule>
 
+  <rule id="112418" level="7">
+    <if_sid>112410</if_sid>
+    <field name="kind">^query_flood$</field>
+    <description>HeimdallDNS: $(summary)</description>
+    <mitre>
+      <id>T1499</id>
+    </mitre>
+    <group>dos,</group>
+  </rule>
+
   <!-- O HeimdallDNS isolou o dispositivo automaticamente (vale para qualquer tipo) -->
   <rule id="112420" level="14">
-    <if_sid>112411,112412,112413,112414,112415,112416</if_sid>
+    <if_sid>112411,112412,112413,112414,112415,112416,112418</if_sid>
     <field name="response">^isolated$</field>
     <description>HeimdallDNS: dispositivo $(client.name) ($(srcip)) ISOLADO automaticamente: $(summary)</description>
     <group>active_response,</group>
