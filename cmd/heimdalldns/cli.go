@@ -28,7 +28,7 @@ import (
 var commands = map[string]bool{
 	"status": true, "clients": true, "client": true, "name": true, "isolate": true,
 	"release": true, "rules": true, "forget": true, "services": true, "passwd": true, "mfa-off": true,
-	"backup": true, "restore": true,
+	"backup": true, "restore": true, "users": true,
 }
 
 func isCommand(s string) bool { return commands[s] }
@@ -56,6 +56,7 @@ func runCLI(cmd string, args []string) error {
 	encrypt := fs.Bool("encrypt", false, "backup: cifra com uma senha (pedida no terminal)")
 	passFile := fs.String("passphrase-file", "", "backup/restore: arquivo com a senha do backup")
 	restartNow := fs.Bool("restart", false, "restore: reinicia o serviço na hora para aplicar")
+	user := fs.String("user", "admin", "passwd/mfa-off: conta do painel")
 	pos, err := parseInterspersed(fs, args)
 	if err != nil {
 		return err
@@ -141,17 +142,46 @@ func runCLI(cmd string, args []string) error {
 		if err != nil {
 			return err
 		}
-		if err := c.do("POST", "/api/auth/password", map[string]string{"password": pw}, nil); err != nil {
+		if err := c.do("POST", "/api/auth/password", map[string]string{"username": *user, "password": pw}, nil); err != nil {
 			return err
 		}
-		fmt.Println("senha do painel alterada; as sessões abertas foram encerradas")
+		fmt.Printf("senha de %s alterada; as sessões dessa conta foram encerradas\n", *user)
 		return nil
 	case "mfa-off":
-		if err := c.do("POST", "/api/auth/mfa/disable", map[string]string{}, nil); err != nil {
+		if err := c.do("POST", "/api/auth/mfa/disable", map[string]string{"username": *user}, nil); err != nil {
 			return err
 		}
-		fmt.Println("verificação em duas etapas desligada; ligue de novo pelo painel")
+		fmt.Printf("verificação em duas etapas de %s desligada; ligue de novo pelo painel\n", *user)
 		return nil
+	case "users":
+		var us []struct {
+			Username  string    `json:"username"`
+			Display   string    `json:"display"`
+			Role      string    `json:"role"`
+			Source    string    `json:"source"`
+			MFA       bool      `json:"mfa"`
+			Disabled  bool      `json:"disabled"`
+			LastLogin time.Time `json:"last_login"`
+		}
+		if err := c.do("GET", "/api/users", nil, &us); err != nil {
+			return err
+		}
+		tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(tw, "USUÁRIO\tNOME\tPAPEL\tORIGEM\tMFA\tÚLTIMO ACESSO\tESTADO")
+		for _, u := range us {
+			last, st, mfa := "nunca", "ativo", "não"
+			if !u.LastLogin.IsZero() {
+				last = ago(u.LastLogin)
+			}
+			if u.Disabled {
+				st = "desativado"
+			}
+			if u.MFA {
+				mfa = "sim"
+			}
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", u.Username, dash(u.Display), u.Role, u.Source, mfa, last, st)
+		}
+		return tw.Flush()
 	case "backup":
 		pass := ""
 		if *passFile != "" || *encrypt {

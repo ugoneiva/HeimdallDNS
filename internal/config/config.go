@@ -174,6 +174,17 @@ type AD struct {
 	UserOUs          []string `yaml:"user_ous"`
 	ManagedGroups    []string `yaml:"managed_groups"`
 	DNSZones         []string `yaml:"dns_zones"`
+	Login            ADLogin  `yaml:"login"`
+}
+
+// ADLogin libera a entrada no painel com as contas do AD; o papel vem do
+// primeiro grupo que casar (admin, depois operator, depois viewer).
+type ADLogin struct {
+	Enabled        bool     `yaml:"enabled"`
+	AdminGroups    []string `yaml:"admin_groups"`
+	OperatorGroups []string `yaml:"operator_groups"`
+	ViewerGroups   []string `yaml:"viewer_groups"`
+	RequireMFA     bool     `yaml:"require_mfa"` // padrão true
 }
 
 // HA liga a replicação entre nós: um principal e réplicas.
@@ -252,6 +263,7 @@ func Default() *Config {
 			StatsRetention: 90 * 24 * time.Hour,
 		},
 		Backup:  Backup{Interval: 24 * time.Hour, Keep: 7},
+		AD:      AD{Login: ADLogin{RequireMFA: true}},
 		DataDir: "/var/lib/heimdalldns",
 		Log:     Log{Level: "info"},
 	}
@@ -275,6 +287,9 @@ func Load(path string) (*Config, error) {
 
 func (c *Config) Validate() error {
 	var errs []error
+	if l := c.AD.Login; l.Enabled && (!c.AD.Enabled || len(l.AdminGroups)+len(l.OperatorGroups)+len(l.ViewerGroups) == 0) {
+		errs = append(errs, errors.New("ad.login: precisa de ad.enabled e de ao menos um grupo (admin_groups, operator_groups ou viewer_groups)"))
+	}
 	if c.Backup.Interval < 0 || (c.Backup.Interval > 0 && c.Backup.Interval < time.Hour) {
 		errs = append(errs, errors.New("backup.interval: use 0 (desligado) ou 1h ou mais"))
 	}

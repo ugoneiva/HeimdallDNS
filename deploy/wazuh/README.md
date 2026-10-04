@@ -52,6 +52,10 @@ systemctl restart wazuh-manager
 | 112434 | 8 | restauração de backup, reinício pelo painel ou importação do Pi-hole |
 | 112435 | 8 | servidores DNS de saída (upstreams) trocados: confira se foi você |
 | 112436 | 5 | backup baixado (leva hash da senha e tokens) |
+| 112437 | 6 | login recusado no painel (senha, MFA, conta desativada ou sem grupo do AD) |
+| 112438 | 10 | 6 logins recusados do mesmo IP em 2 min: força bruta (MITRE T1110) |
+| 112440 | 7 | ação barrada pelo papel (conta ou token fora do escopo; MITRE T1078) |
+| 112439 | 8 | conta do painel criada, alterada (papel, senha, MFA, desativação) ou excluída; token de API criado |
 
 
 ## Exemplo de evento

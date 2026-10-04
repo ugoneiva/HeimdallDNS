@@ -414,6 +414,8 @@ func runServer() error {
 				Server: srv, Cache: dnsCache, Upstream: ups, Filter: flt, Clients: reg,
 				Store: db, Log: qlog, Security: sec, NRD: nrdCheck, UI: webui.FS(), Secure: tls, DHCP: dhcpSrv,
 				HA: haDeps, AD: adClient, Audit: auditExp,
+				ADLogin: api.ADLogin{Enabled: cfg.AD.Login.Enabled, AdminGroups: cfg.AD.Login.AdminGroups,
+					OperatorGroups: cfg.AD.Login.OperatorGroups, ViewerGroups: cfg.AD.Login.ViewerGroups, RequireMFA: cfg.AD.Login.RequireMFA},
 				Encrypted: api.Encrypted{
 					PublicHost: cfg.DNS.PublicHost, DoH: cfg.DNS.DoHListen != "", DoT: len(cfg.DNS.DoTListen) > 0,
 					DoHPort: portOf(cfg.DNS.DoHListen), DoTPort: portOf(firstOr(cfg.DNS.DoTListen)),
@@ -640,26 +642,32 @@ func newHA(ctx context.Context, cfg *config.Config, db *store.Store, flt *filter
 			if _, err = db.GetJSON(api.DenyKey, &snap.Deny); err != nil {
 				return snap, err
 			}
-			if _, err = db.GetJSON(api.PasswordKey, &snap.PasswordHash); err != nil {
-				return snap, err
-			}
 			if _, err = db.GetJSON(api.LocalKey, &snap.Local); err != nil {
 				return snap, err
 			}
 			if _, err = db.GetJSON(api.UpstreamKey, &snap.Upstream); err != nil {
 				return snap, err
 			}
-			var m api.MFA
-			if _, err = db.GetJSON(api.MFAKey, &m); err != nil {
+			if snap.Users, err = db.Users(); err != nil {
 				return snap, err
 			}
-			m.Pending, m.LastStep = "", 0 // só o que importa para entrar
-			snap.MFA, err = json.Marshal(m)
-			return snap, err
+			for i := range snap.Users {
+				// Só o que importa para entrar: o resto muda a cada login e
+				// faria a versão do snapshot girar à toa.
+				snap.Users[i].LastLogin = time.Time{}
+				snap.Users[i].MFA.Pending, snap.Users[i].MFA.LastStep = "", 0
+			}
+			if snap.Tokens, err = db.Tokens(); err != nil {
+				return snap, err
+			}
+			for i := range snap.Tokens {
+				snap.Tokens[i].LastUsed = time.Time{}
+			}
+			return snap, nil
 		}, log)
 		log.Info("nó principal: réplicas sincronizam em /api/sync/snapshot")
 	case ha.RoleReplica:
-		var lastLists, lastRules, lastLocal, lastUps string
+		var lastLists, lastRules, lastLocal, lastUps, lastUsers, lastTokens string
 		r, err := ha.NewReplica(ha.ReplicaOptions{
 			PrimaryURL: cfg.HA.PrimaryURL, Token: cfg.HA.SyncToken, InsecureTLS: cfg.HA.InsecureTLS, Logger: log,
 			Apply: func(s ha.Snapshot) error {
@@ -707,23 +715,33 @@ func newHA(ctx context.Context, cfg *config.Config, db *store.Store, flt *filter
 					}
 					lastUps = string(b)
 				}
-				if s.PasswordHash != "" {
-					if err := db.SetJSON(api.PasswordKey, s.PasswordHash); err != nil {
-						return err
-					}
-				}
-				if len(s.MFA) > 0 {
-					var m api.MFA
-					if err := json.Unmarshal(s.MFA, &m); err != nil {
-						return err
-					}
-					var local api.MFA
-					_, _ = db.GetJSON(api.MFAKey, &local)
-					if m.Secret != local.Secret || m.Enabled != local.Enabled {
-						if err := db.SetJSON(api.MFAKey, m); err != nil {
-							return err
+				if b, _ := json.Marshal(s.Users); string(b) != lastUsers {
+					// Mantém o que é deste nó: último acesso e o passo do MFA já
+					// usado (senão um código poderia ser reusado aqui).
+					if local, err := db.Users(); err == nil {
+						byID := map[int64]store.User{}
+						for _, u := range local {
+							byID[u.ID] = u
+						}
+						for i, u := range s.Users {
+							if l, ok := byID[u.ID]; ok && strings.EqualFold(l.Username, u.Username) {
+								s.Users[i].LastLogin = l.LastLogin
+								if l.MFA.Secret == u.MFA.Secret {
+									s.Users[i].MFA.LastStep = l.MFA.LastStep
+								}
+							}
 						}
 					}
+					if err := db.ReplaceUsers(s.Users); err != nil {
+						return err
+					}
+					lastUsers = string(b)
+				}
+				if b, _ := json.Marshal(s.Tokens); string(b) != lastTokens {
+					if err := db.ReplaceTokens(s.Tokens); err != nil {
+						return err
+					}
+					lastTokens = string(b)
 				}
 				return reg.ApplyRemote(s.Clients)
 			},
@@ -850,8 +868,9 @@ Comandos:
   rules   <ref> [-deny r1,r2] [-allow r1,r2] [-global=false]
   forget  <ref>                     esquece o dispositivo
   services                          serviços para regras (service:tiktok, service:social…)
-  passwd                            define uma nova senha do painel (recupera o acesso)
-  mfa-off                           desliga a verificação em duas etapas (perdeu o celular)
+  users                             lista as contas do painel
+  passwd  [-user nome]              define uma nova senha (recupera o acesso; padrão: admin)
+  mfa-off [-user nome]              desliga a verificação em duas etapas (perdeu o celular)
   backup  [-o arquivo] [-full] [-encrypt | -passphrase-file f]
                                     baixa um backup (banco + configuração)
   restore <arquivo> [-passphrase-file f] [-restart]

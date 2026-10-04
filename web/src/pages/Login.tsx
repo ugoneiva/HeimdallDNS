@@ -1,25 +1,32 @@
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { KeyRound } from 'lucide-react'
-import { api } from '../api'
+import { api, ApiError } from '../api'
 import { Button, ErrorNote, Field, Input } from '../components/ui'
 import { Logo } from '../components/Logo'
 
-export function Login({ setup, mfa, onDone }: { setup: boolean; mfa?: boolean; onDone: () => void }) {
+export function Login({ setup, adLogin, onDone }: { setup: boolean; adLogin?: boolean; onDone: () => void }) {
   const [code, setCode] = useState('')
+  const [user, setUser] = useState(setup ? 'admin' : '')
   const [otp, setOtp] = useState('')
+  const [askOtp, setAskOtp] = useState(false)
   const [pw, setPw] = useState('')
   const [pw2, setPw2] = useState('')
   const m = useMutation({
     mutationFn: () => {
       if (setup) {
         if (pw !== pw2) throw new Error('As senhas não conferem.')
-        return api('/api/auth/setup', { method: 'POST', body: { code, password: pw } })
+        return api('/api/auth/setup', { method: 'POST', body: { code, username: user, password: pw } })
       }
-      return api('/api/auth/login', { method: 'POST', body: { password: pw, code: otp } })
+      return api('/api/auth/login', { method: 'POST', body: { username: user, password: pw, code: otp } })
     },
     onSuccess: onDone,
+    onError: (e) => {
+      // Senha certa e conta com MFA: o servidor pede o código.
+      if (e instanceof ApiError && e.data?.mfa_required) setAskOtp(true)
+    },
   })
+  const needsOtpNow = m.error instanceof ApiError && m.error.data?.mfa_required && !otp
 
   return (
     <div className="relative grid min-h-full place-items-center px-4 py-10">
@@ -29,7 +36,7 @@ export function Login({ setup, mfa, onDone }: { setup: boolean; mfa?: boolean; o
           <Logo className="size-12" />
           <div>
             <h1 className="text-xl font-semibold text-ink">HeimdallDNS</h1>
-            <p className="mt-1 text-sm text-ink-2">{setup ? 'Primeiro acesso: defina a senha do painel' : 'Entre para continuar'}</p>
+            <p className="mt-1 text-sm text-ink-2">{setup ? 'Primeiro acesso: crie a conta de administrador' : 'Entre para continuar'}</p>
           </div>
         </div>
         <form
@@ -59,7 +66,10 @@ export function Login({ setup, mfa, onDone }: { setup: boolean; mfa?: boolean; o
               />
             </Field>
           )}
-          <Field label={setup ? 'Nova senha' : 'Senha'} hint={setup ? 'Pelo menos 8 caracteres.' : undefined}>
+          <Field label="Usuário" hint={!setup && adLogin ? 'Contas do Active Directory também entram (usuario ou usuario@dominio).' : undefined}>
+            <Input value={user} onChange={(e) => setUser(e.target.value)} autoComplete="username" autoCapitalize="none" spellCheck={false} required autoFocus={!setup} />
+          </Field>
+          <Field label={setup ? 'Senha' : 'Senha'} hint={setup ? 'Pelo menos 8 caracteres.' : undefined}>
             <Input
               type="password"
               value={pw}
@@ -67,10 +77,9 @@ export function Login({ setup, mfa, onDone }: { setup: boolean; mfa?: boolean; o
               autoComplete={setup ? 'new-password' : 'current-password'}
               minLength={setup ? 8 : undefined}
               required
-              autoFocus={!setup}
             />
           </Field>
-          {!setup && mfa && (
+          {!setup && askOtp && (
             <Field label="Código do aplicativo autenticador">
               <Input
                 value={otp}
@@ -80,6 +89,7 @@ export function Login({ setup, mfa, onDone }: { setup: boolean; mfa?: boolean; o
                 placeholder="000000"
                 className="font-mono tracking-widest"
                 required
+                autoFocus
               />
             </Field>
           )}
@@ -88,9 +98,9 @@ export function Login({ setup, mfa, onDone }: { setup: boolean; mfa?: boolean; o
               <Input type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} autoComplete="new-password" minLength={8} required />
             </Field>
           )}
-          <ErrorNote error={m.error} />
+          {!needsOtpNow && <ErrorNote error={m.error} />}
           <Button type="submit" variant="primary" className="w-full" loading={m.isPending} icon={<KeyRound className="size-4" />}>
-            {setup ? 'Definir senha e entrar' : 'Entrar'}
+            {setup ? 'Criar e entrar' : 'Entrar'}
           </Button>
         </form>
       </div>

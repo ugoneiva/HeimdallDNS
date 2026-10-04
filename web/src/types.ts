@@ -113,7 +113,39 @@ export type Rules = {
 
 export type Service = { id: string; name: string; group: string; domains: string[] }
 
-export type AuthState = { setup_required: boolean; authenticated: boolean; version: string; mode?: 'dns' | 'console'; mfa?: boolean; wizard?: boolean }
+export type Role = 'admin' | 'operator' | 'viewer'
+export type UserInfo = {
+  id: number
+  username: string
+  display: string
+  role: Role
+  source: 'local' | 'ad'
+  mfa: boolean
+  mfa_required: boolean
+  disabled: boolean
+  created: string
+  last_login: string
+}
+export type AuthState = {
+  setup_required: boolean
+  authenticated: boolean
+  version: string
+  mode?: 'dns' | 'console'
+  role?: Role
+  user?: UserInfo
+  wizard?: boolean
+  ad_login?: boolean
+}
+export type APIToken = {
+  id: number
+  name: string
+  prefix: string
+  role: Role
+  created: string
+  expires: string
+  last_used: string
+  created_by: string
+}
 
 export type DomainTest = {
   name: string

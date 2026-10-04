@@ -46,6 +46,7 @@ type Deps struct {
 	HA        HA
 	Console   *console.Console // modo console (MSP): só as rotas do console
 	AD        *ad.Client       // nil = sem integração com o Active Directory
+	ADLogin   ADLogin          // entrada no painel com as contas do AD
 	Audit     AuditExporter    // operações administrativas para o SIEM (opcional)
 	Encrypted Encrypted
 	// Backup e restauração (DataDir vazio = sem as rotas).
@@ -91,7 +92,8 @@ func build(d Deps) (*api, http.Handler) {
 	}
 	a := &api{Deps: d, guard: guard{fails: map[string]*failure{}}}
 	if d.Store != nil {
-		if h, err := a.passwordHash(); err == nil && h == "" {
+		a.migrateLegacy()
+		if a.setupRequired() {
 			a.setupCode = newSetupCode()
 			a.Logger.Warn("painel sem senha: abra o painel e informe este código para definir a senha",
 				"codigo", a.setupCode)
@@ -120,6 +122,7 @@ func build(d Deps) (*api, http.Handler) {
 		a.adRoutes(api)
 	}
 	a.localRoutes(api)
+	a.userRoutes(api)
 	api.HandleFunc("POST /api/wizard/done", a.wizardDone)
 	if d.DataDir != "" {
 		a.backupRoutes(api)
@@ -167,7 +170,7 @@ func build(d Deps) (*api, http.Handler) {
 	if d.HA.Source != nil {
 		root.Handle("GET /api/sync/snapshot", d.HA.Source) // token próprio de sincronização
 	}
-	root.Handle("/api/", a.requireAuth(a.replicaGuard(api)))
+	root.Handle("/api/", a.requireAuth(a.replicaGuard(a.auditWrites(api))))
 	if d.UI != nil {
 		root.Handle("/", uiHandler(d.UI))
 	}
@@ -363,12 +366,13 @@ func (a *api) consoleRoutes() http.Handler {
 	api.HandleFunc("POST /api/auth/mfa/setup", a.mfaSetup)
 	api.HandleFunc("POST /api/auth/mfa/enable", a.mfaEnable)
 	api.HandleFunc("POST /api/auth/mfa/disable", a.mfaDisable)
+	a.userRoutes(api)
 	root := http.NewServeMux()
 	root.HandleFunc("GET /api/auth/state", a.authState)
 	root.HandleFunc("POST /api/auth/setup", a.setup)
 	root.HandleFunc("POST /api/auth/login", a.login)
 	root.HandleFunc("POST /api/auth/logout", a.logout)
-	root.Handle("/api/", a.requireAuth(api))
+	root.Handle("/api/", a.requireAuth(a.auditWrites(api)))
 	if a.UI != nil {
 		root.Handle("/", uiHandler(a.UI))
 	}

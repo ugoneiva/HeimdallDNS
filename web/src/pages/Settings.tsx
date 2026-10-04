@@ -10,9 +10,14 @@ import { Button, Card, ErrorNote, Field, Input, Segmented, StatusBadge } from '.
 import { useDHCP } from './DHCP'
 import { useHA } from '../components/HABanner'
 import { BackupCard, PiholeImport } from './Maintenance'
+import { TokensCard, UsersCard } from './Access'
+import { AuditTab } from './ActiveDirectory'
+import { roleLabel, useAuth, useCan } from '../lib/auth'
 
 export function Settings({ onLogout }: { onLogout: () => void }) {
   const { choice } = useTheme()
+  const admin = useCan('admin')
+  const me = useAuth().data?.user
   const status = useQuery({ queryKey: ['status'], queryFn: () => api<Status>('/api/status'), refetchInterval: 5000 })
   const s = status.data
   const hit = s && s.cache.hits + s.cache.misses ? (s.cache.hits / (s.cache.hits + s.cache.misses)) * 100 : 0
@@ -58,21 +63,45 @@ export function Settings({ onLogout }: { onLogout: () => void }) {
         )}
       </Card>
 
-      <HACard />
+      {admin && (
+        <>
+          <UsersCard />
 
-      <DHCPCard />
+          <TokensCard />
 
-      <BackupCard />
+          <HACard />
 
-      <Card title="Migrar do Pi-hole" subtitle="Listas, regras, registros locais, reservas de DHCP e nomes dos aparelhos">
-        <PiholeImport />
-      </Card>
+          <DHCPCard />
 
-      <PasswordCard />
+          <BackupCard />
+
+          <Card title="Migrar do Pi-hole" subtitle="Listas, regras, registros locais, reservas de DHCP e nomes dos aparelhos">
+            <PiholeImport />
+          </Card>
+
+          <div className="lg:col-span-2">
+            <AuditTab />
+          </div>
+        </>
+      )}
+
+      {me?.source === 'ad' ? (
+        <Card title="Senha" subtitle="Conta do Active Directory">
+          <p className="text-xs text-ink-2">A senha é a do AD: troque pelo Windows (Ctrl+Alt+Del) ou pela política da empresa.</p>
+        </Card>
+      ) : (
+        <PasswordCard />
+      )}
 
       <MFACard />
 
       <Card title="Sessão">
+        {me && (
+          <p className="mb-2 text-xs text-ink-2">
+            Conectado como <strong className="text-ink">{me.display || me.username}</strong> ({roleLabel[me.role]}
+            {me.source === 'ad' ? ', conta do AD' : ''}).
+          </p>
+        )}
         <p className="mb-4 text-xs text-ink-2">
           A sessão dura 7 dias. Se perder a senha, rode <code className="font-mono text-ink">sudo heimdalldns passwd</code> no servidor.
         </p>
@@ -184,7 +213,7 @@ function PasswordCard() {
 
 export function MFACard() {
   const qc = useQueryClient()
-  const auth = useQuery({ queryKey: ['auth'], queryFn: () => api<{ mfa?: boolean }>('/api/auth/state') })
+  const auth = useAuth()
   const ha = useHA()
   const [setup, setSetup] = useState<{ secret: string; uri: string; qr: string } | null>(null)
   const [code, setCode] = useState('')
@@ -213,7 +242,9 @@ export function MFACard() {
       qc.invalidateQueries({ queryKey: ['auth'] })
     },
   })
-  const on = !!auth.data?.mfa
+  const me = auth.data?.user
+  const on = !!me?.mfa
+  const ad = me?.source === 'ad'
   if (ha.data?.role === 'replica') {
     return (
       <Card title="Verificação em duas etapas" subtitle={on ? 'Ligada (vem do principal)' : 'Desligada'}>
@@ -232,16 +263,20 @@ export function MFACard() {
           }}
         >
           <p className="text-xs text-ink-2">
-            Para desligar, informe a senha e um código. Perdeu o celular? Rode <code className="font-mono text-ink">sudo heimdalldns mfa-off</code> no servidor.
+            {ad
+              ? 'Contas do Active Directory mantêm a verificação ligada. Trocou de celular? Peça a um administrador para zerar o MFA e cadastre de novo.'
+              : <>Para desligar, informe a senha e um código. Perdeu o celular? Um administrador zera o MFA em Usuários, ou rode <code className="font-mono text-ink">sudo heimdalldns mfa-off -user {me?.username}</code> no servidor.</>}
           </p>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="Senha" autoComplete="current-password" required />
+          <div className={ad ? 'hidden' : 'grid gap-3 sm:grid-cols-2'}>
+            <Input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="Senha" autoComplete="current-password" required={!ad} />
             <Input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Código" inputMode="numeric" required />
           </div>
           <ErrorNote error={disable.error} />
-          <Button type="submit" loading={disable.isPending}>
-            Desligar
-          </Button>
+          {!ad && (
+            <Button type="submit" loading={disable.isPending}>
+              Desligar
+            </Button>
+          )}
         </form>
       ) : setup ? (
         <form

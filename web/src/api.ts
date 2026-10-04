@@ -3,9 +3,11 @@
 
 export class ApiError extends Error {
   status: number
-  constructor(status: number, message: string) {
+  data: Record<string, unknown> | null
+  constructor(status: number, message: string, data: Record<string, unknown> | null = null) {
     super(message)
     this.status = status
+    this.data = data
   }
 }
 
@@ -32,7 +34,7 @@ export async function api<T = unknown>(path: string, init: { method?: string; bo
   if (!res.ok) {
     const msg = (data as { error?: string } | null)?.error ?? `Erro ${res.status}`
     if (res.status === 401 && !path.startsWith('/api/auth/')) authEvents.dispatchEvent(new Event('expired'))
-    throw new ApiError(res.status, msg)
+    throw new ApiError(res.status, msg, data as Record<string, unknown> | null)
   }
   return data as T
 }

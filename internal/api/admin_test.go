@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -69,9 +70,18 @@ func TestLocalRecordsAndUpstream(t *testing.T) {
 	if r, out := p.do(t, "DELETE", "/api/dns/upstream", ""); r.StatusCode != 200 || out["custom"] != false {
 		t.Errorf("voltar ao arquivo: %v", out)
 	}
-	es, _ := p.api.Store.Audit(time.Now().Add(-time.Minute), 10)
-	if len(es) != 3 {
-		t.Errorf("auditoria = %d (esperava 3: local, upstream, reset)", len(es))
+	es, _ := p.api.Store.Audit(time.Now().Add(-time.Minute), 50)
+	var named, refused int
+	for _, e := range es {
+		switch {
+		case strings.HasPrefix(e.Action, "dns.") && e.OK:
+			named++
+		case !e.OK && e.Actor == "admin":
+			refused++ // as tentativas inválidas também ficam registradas
+		}
+	}
+	if named != 3 || refused != 5 {
+		t.Errorf("auditoria: %d alterações de DNS (quero 3), %d recusas (quero 5)", named, refused)
 	}
 }
 

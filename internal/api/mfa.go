@@ -15,24 +15,15 @@ import (
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
-)
 
-// MFAKey guarda a verificação em duas etapas (TOTP, RFC 6238) do painel.
-const MFAKey = "admin.mfa"
+	"github.com/ugoneiva/HeimdallDNS/internal/store"
+)
 
 const (
 	totpStep   = 30 * time.Second
 	totpDigits = 6
 	totpSkew   = 1 // aceita o código do passo anterior e do seguinte (relógio torto)
 )
-
-// MFA é o estado salvo. Pending fica com o segredo até o primeiro código válido.
-type MFA struct {
-	Secret   string `json:"secret,omitempty"`
-	Enabled  bool   `json:"enabled"`
-	Pending  string `json:"pending,omitempty"`
-	LastStep int64  `json:"last_step,omitempty"` // impede reusar o mesmo código
-}
 
 var b32 = base32.StdEncoding.WithPadding(base32.NoPadding)
 
@@ -71,50 +62,56 @@ func totpCheck(secret, code string, now time.Time, after int64) int64 {
 	return 0
 }
 
-func (a *api) mfa() (MFA, error) {
-	var m MFA
-	_, err := a.Store.GetJSON(MFAKey, &m)
-	return m, err
-}
-
-// verifyMFA confere o código e grava o passo usado (sem reuso).
-func (a *api) verifyMFA(code string) error {
+// verifyUserMFA confere o código e grava o passo usado (sem reuso). Relê a
+// conta para não perder um passo gravado por outra requisição.
+func (a *api) verifyUserMFA(u *store.User, code string) error {
 	a.setupMu.Lock()
 	defer a.setupMu.Unlock()
-	m, err := a.mfa()
+	cur, err := a.Store.UserByID(u.ID)
 	if err != nil {
 		return err
 	}
-	if !m.Enabled {
+	if !cur.MFA.Enabled {
 		return nil
 	}
-	step := totpCheck(m.Secret, code, timeNow(), m.LastStep)
+	step := totpCheck(cur.MFA.Secret, code, timeNow(), cur.MFA.LastStep)
 	if step == 0 {
 		return errors.New("código de verificação inválido")
 	}
-	m.LastStep = step
-	return a.Store.SetJSON(MFAKey, m)
+	cur.MFA.LastStep = step
+	if err := a.Store.SaveUser(&cur); err != nil {
+		return err
+	}
+	u.MFA = cur.MFA
+	return nil
+}
+
+// sessionUser exige uma sessão do painel (MFA é de uma pessoa, não de token).
+func (a *api) sessionUser(w http.ResponseWriter, r *http.Request) *store.User {
+	p := a.who(r)
+	if p == nil || p.Kind != kindSession {
+		writeErr(w, http.StatusForbidden, errors.New("a verificação em duas etapas é configurada por quem entra no painel"))
+		return nil
+	}
+	return p.User
 }
 
 // mfaSetup gera um segredo novo (ainda não ligado) e devolve a URI para o app.
-func (a *api) mfaSetup(w http.ResponseWriter, _ *http.Request) {
-	a.setupMu.Lock()
-	defer a.setupMu.Unlock()
-	m, err := a.mfa()
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err)
+func (a *api) mfaSetup(w http.ResponseWriter, r *http.Request) {
+	u := a.sessionUser(w, r)
+	if u == nil {
 		return
 	}
 	raw := make([]byte, 20)
 	_, _ = rand.Read(raw)
-	m.Pending = b32.EncodeToString(raw)
-	if err := a.Store.SetJSON(MFAKey, m); err != nil {
+	u.MFA.Pending = b32.EncodeToString(raw)
+	if err := a.Store.SaveUser(u); err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
 	}
-	label := url.PathEscape("HeimdallDNS:admin")
-	uri := fmt.Sprintf("otpauth://totp/%s?secret=%s&issuer=HeimdallDNS&digits=6&period=30", label, m.Pending)
-	writeJSON(w, http.StatusOK, map[string]string{"secret": m.Pending, "uri": uri})
+	label := url.PathEscape("HeimdallDNS:" + u.Username)
+	uri := fmt.Sprintf("otpauth://totp/%s?secret=%s&issuer=HeimdallDNS&digits=6&period=30", label, u.MFA.Pending)
+	writeJSON(w, http.StatusOK, map[string]string{"secret": u.MFA.Pending, "uri": uri})
 }
 
 // mfaEnable liga o MFA depois do primeiro código válido do segredo pendente.
@@ -125,68 +122,67 @@ func (a *api) mfaEnable(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &body) {
 		return
 	}
-	a.setupMu.Lock()
-	defer a.setupMu.Unlock()
-	m, err := a.mfa()
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err)
+	u := a.sessionUser(w, r)
+	if u == nil {
 		return
 	}
-	if m.Pending == "" {
+	if u.MFA.Pending == "" {
 		writeErr(w, http.StatusConflict, errors.New("gere o segredo primeiro"))
 		return
 	}
-	step := totpCheck(m.Pending, body.Code, timeNow(), 0)
+	step := totpCheck(u.MFA.Pending, body.Code, timeNow(), 0)
 	if step == 0 {
 		a.guard.fail(remoteIP(r))
 		writeErr(w, http.StatusBadRequest, errors.New("código inválido: confira a hora do celular e tente o código atual"))
 		return
 	}
-	m = MFA{Secret: m.Pending, Enabled: true, LastStep: step}
-	if err := a.Store.SetJSON(MFAKey, m); err != nil {
+	u.MFA = store.MFA{Secret: u.MFA.Pending, Enabled: true, LastStep: step}
+	if err := a.Store.SaveUser(u); err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
 	}
-	a.Logger.Info("verificação em duas etapas ligada", "origem", remoteIP(r))
+	a.audit(r, "auth.mfa_enable", u.Username, nil, nil)
 	writeJSON(w, http.StatusOK, map[string]bool{"enabled": true})
 }
 
-// mfaDisable desliga. Pelo painel exige senha e código; com o token da API
-// (comando "heimdalldns mfa-off") não exige, para recuperar o acesso.
+// mfaDisable desliga. Pela sessão exige a senha (contas locais) e um código;
+// com o token raiz ("heimdalldns mfa-off -user x") não exige, para recuperar
+// o acesso de quem perdeu o celular.
 func (a *api) mfaDisable(w http.ResponseWriter, r *http.Request) {
 	var body struct {
+		Username string `json:"username"`
 		Password string `json:"password"`
 		Code     string `json:"code"`
 	}
 	if !readJSON(w, r, &body) {
 		return
 	}
-	if _, cookie := a.authenticate(r); cookie {
-		h, err := a.passwordHash()
-		if err != nil || bcrypt.CompareHashAndPassword([]byte(h), []byte(body.Password)) != nil {
+	u, p, err := a.targetUser(r, body.Username)
+	if err != nil {
+		writeErr(w, http.StatusForbidden, err)
+		return
+	}
+	if p.Kind == kindSession {
+		if a.mustEnrollMFA(u) || (u.Source == sourceAD && a.ADLogin.RequireMFA) {
+			writeErr(w, http.StatusForbidden, errors.New("contas do Active Directory precisam da verificação em duas etapas"))
+			return
+		}
+		if u.Source == sourceLocal && bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(body.Password)) != nil {
 			a.guard.fail(remoteIP(r))
 			writeErr(w, http.StatusForbidden, errors.New("senha incorreta"))
 			return
 		}
-		if err := a.verifyMFA(body.Code); err != nil {
+		if err := a.verifyUserMFA(u, body.Code); err != nil {
 			a.guard.fail(remoteIP(r))
 			writeErr(w, http.StatusForbidden, err)
 			return
 		}
 	}
-	if err := a.Store.SetJSON(MFAKey, MFA{}); err != nil {
+	u.MFA = store.MFA{}
+	if err := a.Store.SaveUser(u); err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
 	}
-	a.Logger.Warn("verificação em duas etapas desligada", "origem", remoteIP(r))
+	a.audit(r, "auth.mfa_disable", u.Username, nil, nil)
 	writeJSON(w, http.StatusOK, map[string]bool{"enabled": false})
-}
-
-// mfaEnabled diz se o MFA está ligado (para o estado do login e as escritas no AD).
-func (a *api) mfaEnabled() bool {
-	if a.Store == nil {
-		return false
-	}
-	m, err := a.mfa()
-	return err == nil && m.Enabled
 }

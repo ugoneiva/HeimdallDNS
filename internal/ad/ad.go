@@ -113,6 +113,19 @@ func (c *Client) Policy() Policy {
 
 // conn abre uma conexão autenticada e sempre criptografada.
 func (c *Client) conn() (*ldap.Conn, error) {
+	l, err := c.dial()
+	if err != nil {
+		return nil, err
+	}
+	if err := l.Bind(c.opts.BindUser, c.opts.BindPassword); err != nil {
+		l.Close()
+		return nil, fmt.Errorf("autenticando no AD: %w", err)
+	}
+	return l, nil
+}
+
+// dial abre a conexão cifrada, ainda sem autenticar.
+func (c *Client) dial() (*ldap.Conn, error) {
 	l, err := ldap.DialURL(c.opts.URL, ldap.DialWithTLSConfig(c.tls))
 	if err != nil {
 		return nil, fmt.Errorf("conectando ao AD: %w", err)
@@ -123,10 +136,6 @@ func (c *Client) conn() (*ldap.Conn, error) {
 			l.Close()
 			return nil, fmt.Errorf("StartTLS (o HeimdallDNS não usa LDAP sem criptografia): %w", err)
 		}
-	}
-	if err := l.Bind(c.opts.BindUser, c.opts.BindPassword); err != nil {
-		l.Close()
-		return nil, fmt.Errorf("autenticando no AD: %w", err)
 	}
 	return l, nil
 }

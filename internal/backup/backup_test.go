@@ -29,7 +29,7 @@ func TestRoundTrip(t *testing.T) {
 			if _, err := st.AddList("Minha lista", "https://exemplo.com/l.txt", ""); err != nil {
 				t.Fatal(err)
 			}
-			if err := st.CreateSession("hash-da-sessao", timeFar()); err != nil {
+			if err := st.CreateSession("hash-da-sessao", 1, timeFar()); err != nil {
 				t.Fatal(err)
 			}
 			cfg := filepath.Join(src, "heimdalldns.yaml")
@@ -87,7 +87,7 @@ func TestRoundTrip(t *testing.T) {
 			if len(ls) != 1 || ls[0].Name != "Minha lista" {
 				t.Errorf("listas restauradas = %+v", ls)
 			}
-			if ok, _ := st2.SessionValid("hash-da-sessao"); ok {
+			if _, ok, _ := st2.Session("hash-da-sessao"); ok {
 				t.Error("sessões não podem ir no backup")
 			}
 			if m, _ := Staged(dst); m != nil {

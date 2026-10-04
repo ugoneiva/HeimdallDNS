@@ -147,6 +147,33 @@ var migrations = []string{
 		error   TEXT NOT NULL DEFAULT ''
 	);
 	CREATE INDEX audit_log_ts ON audit_log(ts);`,
+
+	// 8: usuários com papéis, sessões por usuário e tokens de API com escopo.
+	`CREATE TABLE users (
+		id            INTEGER PRIMARY KEY,
+		username      TEXT NOT NULL UNIQUE COLLATE NOCASE,
+		display       TEXT NOT NULL DEFAULT '',
+		role          TEXT NOT NULL,               -- admin, operator ou viewer
+		source        TEXT NOT NULL DEFAULT 'local', -- local ou ad
+		password_hash TEXT NOT NULL DEFAULT '',    -- bcrypt; vazio nas contas do AD
+		mfa           TEXT NOT NULL DEFAULT '{}',  -- verificação em duas etapas (JSON)
+		disabled      INTEGER NOT NULL DEFAULT 0,
+		created       INTEGER NOT NULL,
+		last_login    INTEGER NOT NULL DEFAULT 0
+	);
+	DELETE FROM sessions; -- sessões antigas não têm dono: todos entram de novo
+	ALTER TABLE sessions ADD COLUMN user_id INTEGER NOT NULL DEFAULT 0;
+	CREATE TABLE api_tokens (
+		id         INTEGER PRIMARY KEY,
+		name       TEXT NOT NULL,
+		token_hash TEXT NOT NULL UNIQUE, -- SHA-256; o token em si só aparece na criação
+		prefix     TEXT NOT NULL,        -- começo do token, para reconhecer na lista
+		role       TEXT NOT NULL,
+		created    INTEGER NOT NULL,
+		expires    INTEGER NOT NULL DEFAULT 0, -- 0 = não vence
+		last_used  INTEGER NOT NULL DEFAULT 0,
+		created_by TEXT NOT NULL DEFAULT ''
+	);`,
 }
 
 type Store struct {

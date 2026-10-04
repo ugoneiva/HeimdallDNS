@@ -90,23 +90,30 @@ func (s *Store) DeleteList(id int64) (bool, error) {
 	return n > 0, nil
 }
 
-func (s *Store) CreateSession(hash string, expires time.Time) error {
-	_, err := s.db.Exec(`INSERT INTO sessions (token_hash, created, expires) VALUES (?, ?, ?)`,
-		hash, time.Now().Unix(), expires.Unix())
+func (s *Store) CreateSession(hash string, userID int64, expires time.Time) error {
+	_, err := s.db.Exec(`INSERT INTO sessions (token_hash, created, expires, user_id) VALUES (?, ?, ?, ?)`,
+		hash, time.Now().Unix(), expires.Unix(), userID)
 	return err
 }
 
-// SessionValid diz se a sessão existe e não venceu.
-func (s *Store) SessionValid(hash string) (bool, error) {
+// Session devolve o dono da sessão, se ela existir e não tiver vencido.
+func (s *Store) Session(hash string) (userID int64, ok bool, err error) {
 	var exp int64
-	err := s.db.QueryRow(`SELECT expires FROM sessions WHERE token_hash = ?`, hash).Scan(&exp)
+	err = s.db.QueryRow(`SELECT expires, user_id FROM sessions WHERE token_hash = ?`, hash).Scan(&exp, &userID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
+		return 0, false, nil
 	}
 	if err != nil {
-		return false, err
+		return 0, false, err
 	}
-	return time.Now().Unix() < exp, nil
+	return userID, time.Now().Unix() < exp, nil
+}
+
+// DeleteUserSessions encerra as sessões de um usuário (troca de senha,
+// desativação, mudança de papel).
+func (s *Store) DeleteUserSessions(userID int64) error {
+	_, err := s.db.Exec(`DELETE FROM sessions WHERE user_id = ?`, userID)
+	return err
 }
 
 func (s *Store) DeleteSession(hash string) error {

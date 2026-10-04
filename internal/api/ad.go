@@ -24,7 +24,6 @@ func (a *api) adRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/ad/computer", a.adComputer)
 	mux.HandleFunc("GET /api/ad/zones", a.adZones)
 	mux.HandleFunc("GET /api/ad/zones/{zone}/records", a.adRecords)
-	mux.HandleFunc("GET /api/audit", a.auditList)
 
 	mux.HandleFunc("POST /api/ad/users", a.adWrite("ad.user.create", a.adCreateUser))
 	mux.HandleFunc("POST /api/ad/users/{sam}/enable", a.adWrite("ad.user.enable", a.adSetEnabled(true)))
@@ -44,8 +43,10 @@ func (a *api) adInfo(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadGateway, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"info": info, "mfa": a.mfaEnabled(), "can_write": info.Write && a.mfaEnabled(),
-		"policy": a.AD.Policy()})
+	p := a.who(r)
+	strong := p != nil && p.StrongAuth()
+	writeJSON(w, http.StatusOK, map[string]any{"info": info, "mfa": strong,
+		"can_write": info.Write && strong && p.Role == store.RoleAdmin, "policy": a.AD.Policy()})
 }
 
 func (a *api) adUsers(w http.ResponseWriter, r *http.Request) {
@@ -125,7 +126,7 @@ func (a *api) adWrite(action string, op adOp) http.HandlerFunc {
 			writeErr(w, http.StatusForbidden, ad.ErrWriteDisabled)
 			return
 		}
-		if !a.mfaEnabled() {
+		if p := a.who(r); p == nil || !p.StrongAuth() {
 			writeErr(w, http.StatusForbidden, errors.New("ligue a verificação em duas etapas do painel antes de alterar o AD"))
 			return
 		}

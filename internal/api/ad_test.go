@@ -53,9 +53,15 @@ func TestADWriteGuardsAndAudit(t *testing.T) {
 		t.Errorf("excluir: %d", r.StatusCode)
 	}
 
-	es, _ := p.api.Store.Audit(time.Now().Add(-time.Hour), 10)
-	if len(es) != 3 || len(sink.got) != 3 {
-		t.Fatalf("auditoria = %d no banco, %d exportadas", len(es), len(sink.got))
+	all, _ := p.api.Store.Audit(time.Now().Add(-time.Hour), 50)
+	var es []store.AuditEntry
+	for _, e := range all {
+		if strings.HasPrefix(e.Action, "ad.") {
+			es = append(es, e)
+		}
+	}
+	if len(es) != 3 || len(sink.got) != len(all) {
+		t.Fatalf("auditoria do AD = %d (quero 3); exportadas %d de %d", len(es), len(sink.got), len(all))
 	}
 	raw, _ := json.Marshal(es)
 	if strings.Contains(string(raw), "Senha-Forte-789!") || strings.Contains(string(raw), "X-123456789!") {
@@ -65,7 +71,7 @@ func TestADWriteGuardsAndAudit(t *testing.T) {
 	for _, e := range es {
 		byAction[e.Action] = e
 	}
-	if e := byAction["ad.user.create"]; !e.OK || e.Target != "api.heimdall" || e.Actor != "painel" {
+	if e := byAction["ad.user.create"]; !e.OK || e.Target != "api.heimdall" || e.Actor != "admin" {
 		t.Errorf("auditoria da criação = %+v", e)
 	}
 	if e := byAction["ad.user.password"]; e.OK || e.Target != "Administrator" || e.Error == "" {

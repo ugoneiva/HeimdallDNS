@@ -18,6 +18,8 @@ import { ConsoleApp } from './pages/Console'
 import { ActiveDirectory, useADInfo } from './pages/ActiveDirectory'
 import { DNS } from './pages/DNS'
 import { Wizard } from './pages/Wizard'
+import { MFACard } from './pages/Settings'
+import { roleLabel, useAuth } from './lib/auth'
 
 type Page = 'overview' | 'devices' | 'security' | 'queries' | 'lists' | 'dns' | 'dhcp' | 'ad' | 'settings'
 
@@ -73,17 +75,16 @@ export default function App() {
   }
   if (!auth.data.authenticated) {
     return (
-      <Login
-        setup={auth.data.setup_required}
-        mfa={auth.data.mfa}
-        onDone={() => qc.resetQueries()}
-      />
+      <Login setup={auth.data.setup_required} adLogin={auth.data.ad_login} onDone={() => qc.resetQueries()} />
     )
   }
   const logout = async () => {
     await api('/api/auth/logout', { method: 'POST' }).catch(() => {})
     qc.removeQueries({ predicate: (q) => q.queryKey[0] !== 'auth' })
     await qc.resetQueries({ queryKey: ['auth'] })
+  }
+  if (auth.data.user?.mfa_required) {
+    return <EnrollMFA onLogout={logout} />
   }
   if (auth.data.mode === 'console') {
     return <ConsoleApp version={auth.data.version} onLogout={logout} />
@@ -163,6 +164,7 @@ function Shell({ version, onLogout }: { version: string; onLogout: () => void })
         <div className="relative mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
           <HABanner />
           <h1 className="mb-5 text-xl font-semibold tracking-tight text-ink">{current.label}</h1>
+          <ReadOnlyNote page={page} />
           {page === 'overview' && <Overview onOpenDevice={(id) => go('devices', id)} onOpenSecurity={() => go('security')} />}
           {page === 'devices' && <Devices openId={arg} onOpen={(id) => go('devices', id)} />}
           {page === 'security' && <Security onOpenDevice={(id) => go('devices', id)} />}
@@ -174,6 +176,45 @@ function Shell({ version, onLogout }: { version: string; onLogout: () => void })
           {page === 'settings' && <Settings onLogout={onLogout} />}
         </div>
       </main>
+    </div>
+  )
+}
+
+// Páginas que exigem um papel para alterar algo (o servidor confere de novo).
+const needs: Partial<Record<Page, 'operator' | 'admin'>> = {
+  devices: 'operator', security: 'operator', queries: 'operator', dhcp: 'operator', lists: 'admin', dns: 'admin',
+}
+
+function ReadOnlyNote({ page }: { page: Page }) {
+  const role = useAuth().data?.role
+  const need = needs[page]
+  if (!role || !need || role === 'admin' || (need === 'operator' && role === 'operator')) return null
+  return (
+    <p className="mb-4 rounded-lg border border-line bg-surface px-3 py-2 text-xs text-ink-2">
+      Seu papel é <strong className="text-ink">{roleLabel[role]}</strong>: aqui você vê tudo, mas as alterações são de quem é{' '}
+      {need === 'admin' ? 'administrador' : 'operador ou administrador'}.
+    </p>
+  )
+}
+
+/** Contas do AD cadastram o MFA no primeiro acesso, antes de usar o painel. */
+function EnrollMFA({ onLogout }: { onLogout: () => void }) {
+  return (
+    <div className="relative grid min-h-full place-items-center px-4 py-10">
+      <div className="bg-grid pointer-events-none absolute inset-0" aria-hidden />
+      <div className="relative w-full max-w-lg space-y-4">
+        <div className="flex items-center gap-3">
+          <Logo className="size-9" />
+          <div>
+            <h1 className="text-lg font-semibold text-ink">Proteja sua conta</h1>
+            <p className="text-xs text-ink-2">Contas do Active Directory usam a verificação em duas etapas. Leva um minuto.</p>
+          </div>
+        </div>
+        <MFACard />
+        <button className="text-xs text-muted hover:text-ink" onClick={onLogout}>
+          Sair
+        </button>
+      </div>
     </div>
   )
 }

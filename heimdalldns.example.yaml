@@ -138,6 +138,15 @@ ad:
   user_ous: []              # ex.: ["OU=Colaboradores,DC=empresa,DC=local"]
   managed_groups: []        # ex.: ["VPN-Usuarios", "Wi-Fi-Corporativo"]
   dns_zones: []             # ex.: ["empresa.local"]
+  # Entrar no painel com as contas do AD. O papel vem do primeiro grupo que
+  # casar (admin, depois operator, depois viewer); quem não está em nenhum,
+  # não entra. Grupos aninhados contam.
+  login:
+    enabled: false
+    admin_groups: []        # ex.: ["TI-Infra"]
+    operator_groups: []     # ex.: ["Service-Desk"]
+    viewer_groups: []       # ex.: ["Auditoria"]
+    require_mfa: true       # cadastra o MFA no primeiro acesso
 
 # Cópias automáticas (o painel e "heimdalldns backup" geram cópias na hora).
 backup:

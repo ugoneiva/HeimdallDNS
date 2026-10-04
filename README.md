@@ -82,17 +82,49 @@ Embutido no próprio binário, em `http://127.0.0.1:8053` por padrão. Tema escu
   - teste **"o que acontece com este domínio?"**, global ou por dispositivo, mostrando a regra que decide.
 - **Active Directory** (opcional): usuários, grupos, DNS do AD e auditoria; veja abaixo.
 - **DNS:** upstreams (predefinições cifradas ou próprios, trocados na hora, com latência e saúde de cada um) e registros locais A/AAAA/CNAME.
-- **Configurações:** tema, troca de senha, verificação em duas etapas, backup e restauração, migração do Pi-hole, informações do servidor e sair.
+- **Configurações:** tema, a própria senha e verificação em duas etapas; para administradores, também usuários, tokens de API, backup e restauração, migração do Pi-hole e auditoria.
 
 **Primeiro acesso:**
-1. Ao abrir o painel sem senha definida, ele pede um **código de configuração** que o serviço imprime no log (`journalctl -u heimdalldns | grep codigo`). Assim, ninguém da rede define a senha antes do dono.
-2. A senha fica guardada com bcrypt.
+1. Ao abrir o painel sem nenhuma conta, ele pede um **código de configuração** que o serviço imprime no log (`journalctl -u heimdalldns | grep codigo`). Assim, ninguém da rede cria o administrador antes do dono.
+2. As senhas ficam guardadas com bcrypt.
 3. A sessão é um cookie `HttpOnly`/`SameSite=Strict`, válido por 7 dias, guardado no banco só como hash.
 4. As alterações exigem a mesma origem do painel, e as tentativas de senha têm limite por IP.
 
-**Verificação em duas etapas (MFA):** em Configurações, leia o QR code num app autenticador (TOTP, RFC 6238) e confirme com um código. Daí em diante o login pede senha e código; um código não vale duas vezes. Desligar pelo painel pede senha e código. Obrigatória para alterar o Active Directory.
+**Usuários e papéis:** cada pessoa entra com a própria conta. Em **Configurações → Usuários**, o administrador cria contas e escolhe o papel:
 
-Esqueceu a senha? `sudo heimdalldns passwd`. Perdeu o autenticador? `sudo heimdalldns mfa-off`.
+| Papel | Pode |
+|---|---|
+| Administrador | tudo: configuração, listas, DNS, usuários, tokens, backup, Active Directory |
+| Operador | ver tudo e operar: isolar e liberar aparelhos, regras por aparelho, reconhecer alertas, bloquear/liberar pelo log, reservas de DHCP |
+| Leitura | só ver |
+
+- **O servidor confere o papel em toda requisição.** A tela só esconde o que a pessoa não pode fazer.
+- **Mudanças que derrubam as sessões da conta:** mudar o papel, desativar, redefinir a senha ou zerar o MFA.
+- **O último administrador ativo nunca sai:** não pode ser rebaixado, desativado nem excluído.
+- **Login recusado:** a mensagem é a mesma para usuário inexistente e senha errada, para não revelar quais contas existem.
+- **Atualização de versão antiga:** a senha única de antes vira o usuário `admin`, com o mesmo MFA.
+
+**Verificação em duas etapas (MFA):** por conta, em **Configurações**. Leia o QR code num app autenticador (TOTP, RFC 6238) e confirme com um código. Depois disso:
+- o login pede o código só para quem tem MFA;
+- um código não vale duas vezes;
+- desligar pede a senha e um código.
+
+O MFA é obrigatório para alterar o Active Directory pelo painel.
+
+**Tokens de API:** em **Configurações → Tokens de API**, para integrações como Grafana, scripts e automação.
+- Cada token tem nome, papel e validade (30 dias, 90 dias, 1 ano ou sem vencer).
+- O token aparece uma vez só; o banco guarda o hash, e a lista mostra só o começo dele.
+- Uso: `Authorization: Bearer hdns_…`.
+- O token do serviço (`<data_dir>/api.token`) continua sendo o da CLI, do console de MSP e da alta disponibilidade.
+
+**Auditoria:** fica registrado:
+- toda alteração (por quem, de onde e com que resultado);
+- todo login, aceito ou recusado;
+- toda tentativa barrada pelo papel.
+
+A lista aparece em **Configurações → Auditoria** e vai para o SIEM com a exportação ligada (regras do Wazuh 112430 a 112440, inclusive detecção de força bruta).
+
+Esqueceu a senha? `sudo heimdalldns passwd -user nome` (padrão: `admin`). Perdeu o autenticador? Um administrador zera o MFA em **Usuários**, ou `sudo heimdalldns mfa-off -user nome`. Para listar as contas: `sudo heimdalldns users`.
 
 As listas e regras criadas pelo painel ficam no banco e se somam às do arquivo de configuração. As do arquivo aparecem no painel só para leitura.
 
@@ -206,6 +238,12 @@ Gerencia o AD pelo painel: compatível principalmente com o **AD do Windows Serv
 
 A senha da conta de serviço fica num arquivo à parte (`ad.bind_password_file`, permissão 600), nunca no YAML.
 
+**Entrar no painel com a conta do AD** (`ad.login`):
+- **Senha:** a pessoa usa o usuário e a senha do domínio (`joao`, `joao@empresa.local` ou `EMPRESA\joao`). O HeimdallDNS confere fazendo bind com a própria conta dela; senha vazia é sempre recusada, porque viraria um bind anônimo.
+- **Papel:** vem dos grupos do AD, inclusive grupos dentro de grupos, e é recalculado a cada login. A ordem é `admin_groups`, depois `operator_groups`, depois `viewer_groups`. Quem não está em nenhum desses grupos não entra.
+- **MFA:** com `require_mfa: true` (padrão), a conta cadastra o MFA no primeiro acesso, antes de ver qualquer dado.
+- **Conta local com o mesmo nome:** nunca é usada pelo AD.
+
 ### API e linha de comando
 
 API REST em `127.0.0.1:8053`, com token. Por padrão o token é gerado em `<data_dir>/api.token`.
@@ -231,7 +269,9 @@ heimdalldns restore copia.tar.gz.age -restart         # restaura e reinicia
 | `GET/POST /api/backups` · `GET /api/backups/{nome}` | cópias automáticas: lista, gera agora, baixa |
 | `GET/POST/DELETE /api/restore` · `POST /api/restart` | restauração em duas etapas (multipart `passphrase` + `file`) e reinício |
 | `POST /api/import/pihole` · `POST /api/import/pihole/{id}/apply` | prévia do Teleporter (multipart `file`) e aplicação das partes escolhidas |
-| `GET /api/audit` | auditoria das operações administrativas |
+| `GET/POST /api/users` · `PATCH/DELETE /api/users/{id}` | contas do painel: criar, papel, desativar, redefinir senha, zerar MFA (`reset_mfa`) |
+| `GET/POST /api/tokens` · `DELETE /api/tokens/{id}` | tokens de API (`name`, `role`, `expires_days`); o token só volta na criação |
+| `GET /api/audit` | auditoria: alterações, logins e tentativas barradas (`range`, `limit`) |
 | `GET /api/status` | contadores, cache, upstreams, regras |
 | `GET /api/clients` · `GET /api/clients/{ref}` | dispositivos |
 | `PATCH /api/clients/{ref}` | `name`, `allow`, `deny`, `skip_global_lists` |

@@ -23,6 +23,37 @@ const actionLabel: Record<string, string> = {
   'ad.group.remove_member': 'Tirou do grupo',
   'ad.dns.add': 'Criou registro DNS',
   'ad.dns.delete': 'Apagou registro DNS',
+  'auth.login': 'Entrou no painel',
+  'auth.denied': 'Tentou sem permissão',
+  'auth.setup': 'Criou o administrador',
+  'auth.password': 'Trocou a senha',
+  'auth.mfa_enable': 'Ligou o MFA',
+  'auth.mfa_disable': 'Desligou o MFA',
+  'auth.ad_role': 'Papel mudou pelo grupo do AD',
+  'user.create': 'Criou conta',
+  'user.update': 'Alterou conta',
+  'user.delete': 'Excluiu conta',
+  'token.create': 'Criou token de API',
+  'token.delete': 'Revogou token de API',
+  'backup.download': 'Baixou backup',
+  'backup.create': 'Gerou backup',
+  'backup.restore': 'Preparou restauração',
+  'backup.restore_cancel': 'Desistiu da restauração',
+  'service.restart': 'Reiniciou o serviço',
+  'import.pihole': 'Importou do Pi-hole',
+  'dns.local.update': 'Alterou registros locais',
+  'dns.upstream.update': 'Trocou os upstreams',
+  'dns.upstream.reset': 'Voltou aos upstreams do arquivo',
+  'POST /api/clients/{ref}/isolate': 'Isolou dispositivo',
+  'POST /api/clients/{ref}/release': 'Liberou dispositivo',
+  'PATCH /api/clients/{ref}': 'Alterou dispositivo',
+  'DELETE /api/clients/{ref}': 'Esqueceu dispositivo',
+  'PUT /api/rules': 'Alterou as regras próprias',
+  'POST /api/rules/quick': 'Regra rápida',
+  'POST /api/lists': 'Adicionou lista',
+  'PATCH /api/lists/{id}': 'Alterou lista',
+  'DELETE /api/lists/{id}': 'Removeu lista',
+  'PUT /api/security/settings': 'Alterou a segurança',
 }
 
 export function ActiveDirectory() {
@@ -469,10 +500,10 @@ function DNSTab({ ad }: { ad: ADInfo }) {
   )
 }
 
-function AuditTab() {
+export function AuditTab() {
   const audit = useQuery({ queryKey: ['audit'], queryFn: () => api<AuditEntry[]>('/api/audit?range=90d&limit=300'), refetchInterval: 15_000 })
   return (
-    <Card pad={false} title="Auditoria" subtitle="Toda alteração no AD fica registrada (e vai para o SIEM, se a exportação estiver ligada)">
+    <Card pad={false} title="Auditoria" subtitle="Toda alteração e todo login ficam registrados (e vão para o SIEM, se a exportação estiver ligada)">
       <ErrorNote error={audit.error} />
       <ul className="divide-y divide-line">
         {(audit.data ?? []).map((e) => (

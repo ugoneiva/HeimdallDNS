@@ -43,16 +43,16 @@ var (
 
 // Snapshot é tudo o que vai do principal para as réplicas.
 type Snapshot struct {
-	Version      string                 `json:"version"`
-	Lists        []store.List           `json:"lists"`
-	Allow        []string               `json:"allow"`
-	Deny         []string               `json:"deny"`
-	Security     security.Settings      `json:"security"`
-	PasswordHash string                 `json:"password_hash"`
-	MFA          json.RawMessage        `json:"mfa,omitempty"` // verificação em duas etapas do painel
-	Clients      []clients.State        `json:"clients"`
-	Local        []store.LocalRecord    `json:"local,omitempty"`
-	Upstream     store.UpstreamSettings `json:"upstream"`
+	Version  string                 `json:"version"`
+	Lists    []store.List           `json:"lists"`
+	Allow    []string               `json:"allow"`
+	Deny     []string               `json:"deny"`
+	Security security.Settings      `json:"security"`
+	Users    []store.User           `json:"users"`  // contas do painel (hash da senha e MFA)
+	Tokens   []store.APIToken       `json:"tokens"` // tokens de API (só o hash)
+	Clients  []clients.State        `json:"clients"`
+	Local    []store.LocalRecord    `json:"local,omitempty"`
+	Upstream store.UpstreamSettings `json:"upstream"`
 }
 
 // stamp calcula a versão (hash do conteúdo).

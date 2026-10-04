@@ -303,12 +303,12 @@ func TestMFALoginFlow(t *testing.T) {
 	if r, out := p.do(t, "POST", "/api/auth/mfa/enable", `{"code":"`+code+`"}`); r.StatusCode != 200 {
 		t.Fatalf("ligar: %v", out)
 	}
-	if _, st := p.do(t, "GET", "/api/auth/state", ""); st["mfa"] != true {
+	if _, st := p.do(t, "GET", "/api/auth/state", ""); st["user"].(map[string]any)["mfa"] != true {
 		t.Error("estado deveria indicar MFA")
 	}
 	p.do(t, "POST", "/api/auth/logout", "")
-	if r, _ := p.do(t, "POST", "/api/auth/login", `{"password":"senha-forte-1"}`); r.StatusCode != http.StatusUnauthorized {
-		t.Errorf("sem código: %d", r.StatusCode)
+	if r, out := p.do(t, "POST", "/api/auth/login", `{"password":"senha-forte-1"}`); r.StatusCode != http.StatusUnauthorized || out["mfa_required"] != true {
+		t.Errorf("sem código: %d %v", r.StatusCode, out)
 	}
 	// O código usado para ligar não vale de novo (sem reuso); o do passo seguinte vale.
 	if r, _ := p.do(t, "POST", "/api/auth/login", `{"password":"senha-forte-1","code":"`+code+`"}`); r.StatusCode != http.StatusUnauthorized {
@@ -329,7 +329,7 @@ func TestMFALoginFlow(t *testing.T) {
 	if r, err := http.DefaultClient.Do(req); err != nil || r.StatusCode != 200 {
 		t.Errorf("mfa-off pelo token: %v", r.StatusCode)
 	}
-	if p.api.mfaEnabled() {
+	if u, _ := p.api.Store.UserByName("admin"); u.MFA.Enabled {
 		t.Error("deveria estar desligado")
 	}
 }

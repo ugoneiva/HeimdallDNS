@@ -149,6 +149,44 @@
     <group>audit,</group>
   </rule>
 
+  <rule id="112437" level="6">
+    <if_sid>112433</if_sid>
+    <field name="operation">^auth\.login$</field>
+    <description>HeimdallDNS: login recusado no painel para $(target) ($(srcip)): $(error)</description>
+    <group>audit,authentication_failed,</group>
+  </rule>
+
+  <rule id="112440" level="7">
+    <if_sid>112433</if_sid>
+    <field name="operation">^auth\.denied$</field>
+    <description>HeimdallDNS: $(actor) tentou $(target) sem permissão ($(srcip))</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>audit,access_denied,</group>
+  </rule>
+
+  <rule id="112438" level="10" frequency="6" timeframe="120">
+    <if_matched_sid>112437</if_matched_sid>
+    <same_srcip />
+    <description>HeimdallDNS: várias tentativas de login recusadas a partir de $(srcip) (força bruta?)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>audit,authentication_failures,</group>
+  </rule>
+
+  <rule id="112439" level="8">
+    <if_sid>112430</if_sid>
+    <field name="operation">^user\.|^token\.create$</field>
+    <field name="success">^true$</field>
+    <description>HeimdallDNS: conta ou token do painel alterado ($(operation) em $(target)) por $(actor), $(srcip)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+    <group>audit,account_changed,</group>
+  </rule>
+
   <rule id="112434" level="8">
     <if_sid>112430</if_sid>
     <field name="operation">^backup\.restore$|^service\.restart$|^import\.pihole$</field>
