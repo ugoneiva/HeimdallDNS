@@ -310,3 +310,32 @@ func appendStrings(args []any, ss []string) []any {
 func escapeLike(s string) string {
 	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
 }
+
+// ClientDomainCount é quantas vezes um aparelho consultou um nome.
+type ClientDomainCount struct {
+	ClientID string
+	Name     string
+	Queries  int
+	Blocked  int
+}
+
+// ClientDomains soma as consultas por aparelho e nome desde since (para o
+// mapa da rede). Devolve no máximo limit pares, os mais consultados.
+func (s *Store) ClientDomains(since time.Time, limit int) ([]ClientDomainCount, error) {
+	rows, err := s.db.Query(`SELECT client_id, name, count(*), sum(status IN ('blocked', 'isolated'))
+		FROM queries WHERE ts >= ? AND client_id != '' GROUP BY client_id, name ORDER BY count(*) DESC LIMIT ?`,
+		since.UnixMilli(), max(limit, 1))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ClientDomainCount
+	for rows.Next() {
+		var c ClientDomainCount
+		if err := rows.Scan(&c.ClientID, &c.Name, &c.Queries, &c.Blocked); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}

@@ -52,6 +52,7 @@ type Settings struct {
 	Deny            []string  `json:"deny,omitempty"`
 	SkipGlobalLists bool      `json:"skip_global_lists,omitempty"`
 	Group           string    `json:"group,omitempty"` // id do grupo (regras e horários)
+	Kind            string    `json:"kind,omitempty"`  // tipo escolhido à mão (celular, tv…); "" = deduzido
 	// AccessToken identifica o aparelho fora da rede (DoH /dns-query/<token>,
 	// DoT <token>.<host público>), com a política dele em qualquer lugar.
 	AccessToken string `json:"access_token,omitempty"`

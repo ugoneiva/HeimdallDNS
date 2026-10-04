@@ -283,3 +283,6 @@ func (r *Recorder) purge() {
 		r.log.Info("histórico antigo removido", "linhas", n)
 	}
 }
+
+// StoresQueries diz se as consultas detalhadas vão para o histórico.
+func (r *Recorder) StoresQueries() bool { return r != nil && r.opts.StoreQueries }

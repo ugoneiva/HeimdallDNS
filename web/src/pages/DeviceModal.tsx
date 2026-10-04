@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Lock, LockOpen, Trash } from 'lucide-react'
+import { Ban, Globe, Lock, LockOpen, Trash } from 'lucide-react'
 import { api, qs } from '../api'
 import type { ADComputer, Device, Ranked, Service, Summary } from '../types'
 import { ago, fmtDateTime, fmtInt, fmtPct, modeLabel } from '../lib/format'
@@ -13,6 +13,8 @@ import { RoamingTab } from './RoamingTab'
 import { useGroups } from './Groups'
 import { useADInfo } from './ActiveDirectory'
 import { t } from '../lib/i18n'
+import { useCan } from '../lib/auth'
+import { kindLabel } from '../lib/kinds'
 
 type Tab = 'summary' | 'rules' | 'isolate' | 'roaming'
 
@@ -29,6 +31,7 @@ export function DeviceModal({ device, onClose }: { device: Device | null; onClos
     <Modal open={!!device} onClose={onClose} wide title={device ? <DeviceTitle d={device} /> : ''}>
       {device && (
         <div className="space-y-5">
+          <BlockBar d={device} onDetails={() => setTab('isolate')} />
           <Segmented
             label={t('Seções')}
             value={tab}
@@ -36,7 +39,7 @@ export function DeviceModal({ device, onClose }: { device: Device | null; onClos
             options={[
               { value: 'summary', label: t('Resumo') },
               { value: 'rules', label: t('Regras') },
-              { value: 'isolate', label: device.settings.isolated ? t('Isolamento (ativo)') : t('Isolamento') },
+              { value: 'isolate', label: device.settings.isolated ? t('Bloqueio (ativo)') : t('Bloqueio') },
               { value: 'roaming', label: device.settings.access_token ? t('Fora da rede (ativo)') : t('Fora da rede') },
             ]}
           />
@@ -54,8 +57,75 @@ function DeviceTitle({ d }: { d: Device }) {
   return (
     <span className="flex items-center gap-2">
       {d.display}
-      {d.settings.isolated && <StatusBadge tone="critical">{t('Isolado')}</StatusBadge>}
+      {d.settings.isolated && <StatusBadge tone="critical">{t('Bloqueado')}</StatusBadge>}
     </span>
+  )
+}
+
+/** Bloquear ou desbloquear com um clique, sempre à vista no topo da janela. */
+function BlockBar({ d, onDetails }: { d: Device; onDetails: () => void }) {
+  const save = useSave(d)
+  const can = useCan('operator')
+  const blocked = !!d.settings.isolated
+  return (
+    <div
+      className={cx(
+        'flex flex-wrap items-center gap-3 rounded-lg border p-3 text-xs',
+        blocked ? 'border-critical/40 bg-critical-soft text-critical-ink' : 'border-line text-ink-2',
+      )}
+    >
+      {blocked ? <Lock className="size-4 shrink-0" aria-hidden /> : <Globe className="size-4 shrink-0 text-muted" aria-hidden />}
+      <span className="min-w-0 flex-1">
+        {blocked ? (
+          <>
+            <strong>{t('Internet bloqueada')}</strong>
+            {d.settings.isolated_at && <> · {t('desde')} {fmtDateTime(d.settings.isolated_at)}</>}
+            {d.settings.isolate_reason && <> · {d.settings.isolate_reason}</>}
+          </>
+        ) : (
+          t('Acesso normal. Bloquear corta o DNS deste aparelho na hora; ele ainda alcança quem acessar direto por IP (para cortar tudo, combine com o firewall).')
+        )}
+      </span>
+      {can && (
+        <>
+          <Button variant="ghost" size="sm" onClick={onDetails}>
+            {t('Opções do bloqueio')}
+          </Button>
+          <Button
+            size="sm"
+            variant={blocked ? 'secondary' : 'danger'}
+            icon={blocked ? <LockOpen className="size-3.5" /> : <Ban className="size-3.5" />}
+            loading={save.isPending}
+            onClick={() =>
+              save.mutate(
+                blocked
+                  ? { path: '/release', method: 'POST' }
+                  : { path: '/isolate', method: 'POST', body: { reason: t('Bloqueado manualmente pelo painel') } },
+              )
+            }
+          >
+            {blocked ? t('Desbloquear') : t('Bloquear agora')}
+          </Button>
+        </>
+      )}
+      <ErrorNote error={save.error} />
+    </div>
+  )
+}
+
+/** Tipo do aparelho (ícone no mapa da rede): deduzido ou escolhido à mão. */
+function KindField({ d }: { d: Device }) {
+  const save = useSave(d)
+  return (
+    <Field label={t('Tipo de aparelho')} hint={t('Deduzido pelo nome, fabricante e pelo que ele acessa; escolha à mão se errar.')}>
+      <Select
+        label={t('Tipo de aparelho')}
+        value={d.settings.kind ?? ''}
+        onChange={(kind) => save.mutate({ path: '', method: 'PATCH', body: { kind } })}
+        className="w-full"
+        options={[{ value: '', label: t('Deduzir automaticamente') }, ...Object.entries(kindLabel).map(([value, label]) => ({ value, label }))]}
+      />
+    </Field>
   )
 }
 
@@ -64,7 +134,10 @@ function useSave(d: Device) {
   return useMutation({
     mutationFn: ({ path, method, body }: { path: string; method: string; body?: unknown }) =>
       api<Device>(`/api/clients/${encodeURIComponent(d.id)}${path}`, { method, body }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['clients'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['clients'] })
+      qc.invalidateQueries({ queryKey: ['topology'] }) // o mapa mostra o bloqueio e o tipo na hora
+    },
   })
 }
 
@@ -122,6 +195,9 @@ function SummaryTab({ d, onForget }: { d: Device; onForget: () => void }) {
         <Button type="submit" loading={save.isPending} className="mb-[18px]">
           {t('Salvar nome')}
         </Button>
+        <div className="min-w-56 flex-1">
+          <KindField d={d} />
+        </div>
       </form>
       <ErrorNote error={save.error} />
 

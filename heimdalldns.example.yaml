@@ -48,7 +48,7 @@ cache:
   size: 20000       # número de respostas
   min_ttl: 0        # segundos
   max_ttl: 86400
-  serve_stale: 1h   # serve a resposta vencida enquanto renova; 0 desliga
+  serve_stale: 1h   # serve a resposta vencida enquanto renova; 0s desliga
 
 filter:
   update_interval: 24h
@@ -161,7 +161,7 @@ ad:
 
 # Cópias automáticas (o painel e "heimdalldns backup" geram cópias na hora).
 backup:
-  interval: 24h             # 0 desliga
+  interval: 24h             # 0s desliga (duração: escreva 0s, não 0)
   keep: 7                   # quantas guardar
   dir: ""                   # "" = <data_dir>/backups
   full: false               # true inclui o histórico de consultas

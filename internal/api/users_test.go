@@ -19,6 +19,7 @@ import (
 
 	"github.com/ugoneiva/HeimdallDNS/internal/ad"
 	"github.com/ugoneiva/HeimdallDNS/internal/console"
+	"github.com/ugoneiva/HeimdallDNS/internal/querylog"
 	"github.com/ugoneiva/HeimdallDNS/internal/store"
 )
 
@@ -397,5 +398,45 @@ func TestConsoleTemplates(t *testing.T) {
 	resp.Body.Close()
 	if gs := tenants[0].reg.Groups(); len(gs) != 1 {
 		t.Errorf("grupo duplicado: %+v", gs)
+	}
+}
+
+func TestTopologyAPI(t *testing.T) {
+	p := newPanelWith(t, withDNS(t))
+	login(t, p)
+	c := p.reg.Observe(mustAddr("192.168.0.61"), time.Now())
+	now := time.Now()
+	var es []querylog.Entry
+	for i, n := range []string{"www.youtube.com", "www.youtube.com", "i.ytimg.com", "ads.rastreio.net"} {
+		st := "forwarded"
+		if i == 3 {
+			st = "blocked"
+		}
+		es = append(es, querylog.Entry{Time: now, ClientIP: "192.168.0.61", ClientID: c.ID(), Name: n, Type: "A", Status: st, Rcode: "NOERROR"})
+	}
+	if err := p.api.Store.InsertQueries(es); err != nil {
+		t.Fatal(err)
+	}
+	if r, out := p.do(t, "PATCH", "/api/clients/"+c.ID(), `{"kind":"geladeira"}`); r.StatusCode != 400 {
+		t.Errorf("tipo inválido: %d %v", r.StatusCode, out)
+	}
+	p.do(t, "PATCH", "/api/clients/"+c.ID(), `{"kind":"tv"}`)
+	r, out := p.do(t, "GET", "/api/topology?range=1h", "")
+	if r.StatusCode != 200 {
+		t.Fatalf("topologia: %v", out)
+	}
+	m := out["map"].(map[string]any)
+	devs := m["devices"].([]any)
+	d := devs[0].(map[string]any)
+	if d["kind"] != "tv" || d["kind_auto"] != false || d["queries"] != 4.0 || d["blocked"] != 1.0 {
+		t.Errorf("aparelho = %v", d)
+	}
+	ids := map[string]float64{}
+	for _, x := range m["destinations"].([]any) {
+		dd := x.(map[string]any)
+		ids[dd["id"].(string)] = dd["queries"].(float64)
+	}
+	if ids["youtube"] != 3 || ids["bloqueados"] != 1 {
+		t.Errorf("destinos = %v", ids)
 	}
 }

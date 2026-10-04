@@ -45,6 +45,7 @@ export type Settings = {
   skip_global_lists?: boolean
   access_token?: string
   group?: string
+  kind?: string
 }
 
 export type GroupSchedule = {
@@ -411,3 +412,28 @@ export type PolicyTemplate = {
   groups?: { id: string; name: string; deny?: string[] }[]
 }
 export type ApplyResult = { tenant_id: string; tenant_name: string; ok: boolean; changes: string[]; error?: string }
+
+export type TopoDevice = {
+  id: string
+  name: string
+  ips: string[]
+  vendor?: string
+  kind: string
+  kind_auto: boolean
+  active: boolean
+  isolated: boolean
+  group?: string
+  alerts: number
+  queries: number
+  blocked: number
+  self?: boolean
+}
+export type TopoDest = { id: string; name: string; category: string; queries: number; blocked: number; devices: number }
+export type TopologyResponse = {
+  map: { devices: TopoDevice[]; destinations: TopoDest[]; links: { device: string; dest: string; queries: number; blocked: number }[] }
+  upstreams: UpstreamStat[]
+  gateway: string
+  version: string
+  history: boolean
+  kinds: string[]
+}

@@ -3,11 +3,12 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Ellipsis, Search, ShieldBan } from 'lucide-react'
+import { Ban, Ellipsis, LockOpen, Search, ShieldBan } from 'lucide-react'
 import { api } from '../api'
 import type { Device } from '../types'
 import { ago, fmtInt, fmtPct } from '../lib/format'
-import { Card, Input, Segmented, StatusBadge, Switch, cx } from '../components/ui'
+import { Button, Card, Input, Segmented, StatusBadge, cx } from '../components/ui'
+import { useCan } from '../lib/auth'
 import { Radar } from '../components/Radar'
 import { DeviceModal } from './DeviceModal'
 import { GroupsCard } from './Groups'
@@ -30,13 +31,17 @@ export function Devices({ openId, onOpen }: { openId: string | null; onOpen: (id
     return () => clearInterval(t)
   }, [])
 
+  const canOperate = useCan('operator')
   const toggle = useMutation({
     mutationFn: ({ d, on }: { d: Device; on: boolean }) =>
       api(`/api/clients/${encodeURIComponent(d.id)}/${on ? 'release' : 'isolate'}`, {
         method: 'POST',
-        body: on ? undefined : { reason: 'Isolado pelo painel' },
+        body: on ? undefined : { reason: t('Bloqueado manualmente pelo painel') },
       }),
-    onSettled: () => qc.invalidateQueries({ queryKey: ['clients'] }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['clients'] })
+      qc.invalidateQueries({ queryKey: ['topology'] })
+    },
   })
 
   const active = data.filter((d) => now - Date.parse(d.last_seen) < 5 * 60_000).length
@@ -78,7 +83,7 @@ export function Devices({ openId, onOpen }: { openId: string | null; onOpen: (id
             </div>
           ))}
           <p className="col-span-full text-xs leading-relaxed text-muted">
-            {t('O interruptor')}{' '}<strong className="text-ink-2">{t('Acesso')}</strong>{' '}{t('isola o dispositivo na hora: o DNS passa a recusar todas as consultas dele. Use')}{' '}<Ellipsis className="inline size-3.5" aria-label={t('detalhes')} />{' '}{t('para escolher o modo, liberar exceções ou criar regras só para aquele aparelho.')}
+            {t('O botão')}{' '}<strong className="text-ink-2">{t('Bloquear')}</strong>{' '}{t('corta a internet do aparelho na hora (o DNS passa a recusar tudo). Use')}{' '}<Ellipsis className="inline size-3.5" aria-label={t('detalhes')} />{' '}{t('para escolher o modo, liberar exceções ou criar regras só para aquele aparelho.')}
           </p>
         </div>
       </div>
@@ -111,7 +116,7 @@ export function Devices({ openId, onOpen }: { openId: string | null; onOpen: (id
                 <th className="px-3 py-2.5 text-right font-medium">{t('Consultas')}</th>
                 <th className="px-3 py-2.5 text-right font-medium">{t('Bloqueadas')}</th>
                 <th className="px-3 py-2.5 font-medium">{t('Estado')}</th>
-                <th className="px-3 py-2.5 font-medium">{t('Acesso')}</th>
+                <th className="px-3 py-2.5 font-medium">{t('Internet')}</th>
                 <th className="w-10 px-3 py-2.5" />
               </tr>
             </thead>
@@ -156,12 +161,19 @@ export function Devices({ openId, onOpen }: { openId: string | null; onOpen: (id
                       )}
                     </td>
                     <td className="px-3 py-2.5">
-                      <Switch
-                        checked={!d.settings.isolated}
-                        label={d.settings.isolated ? t('Liberar {nome}', { nome: d.display }) : t('Isolar {nome}', { nome: d.display })}
-                        disabled={toggle.isPending && toggle.variables?.d.id === d.id}
-                        onChange={(on) => toggle.mutate({ d, on })}
-                      />
+                      {canOperate && (
+                        <Button
+                          size="sm"
+                          variant={d.settings.isolated ? 'secondary' : 'ghost'}
+                          className={d.settings.isolated ? '' : 'text-critical-ink hover:bg-critical-soft'}
+                          icon={d.settings.isolated ? <LockOpen className="size-3.5" /> : <Ban className="size-3.5" />}
+                          loading={toggle.isPending && toggle.variables?.d.id === d.id}
+                          aria-label={d.settings.isolated ? t('Desbloquear {nome}', { nome: d.display }) : t('Bloquear {nome}', { nome: d.display })}
+                          onClick={() => toggle.mutate({ d, on: !!d.settings.isolated })}
+                        >
+                          {d.settings.isolated ? t('Desbloquear') : t('Bloquear')}
+                        </Button>
+                      )}
                     </td>
                     <td className="px-3 py-2.5">
                       <button onClick={() => onOpen(d.id)} aria-label={t('Detalhes de {nome}', { nome: d.display })} className="rounded-md p-1.5 text-muted hover:bg-surface-3 hover:text-ink">

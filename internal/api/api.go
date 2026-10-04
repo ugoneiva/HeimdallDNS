@@ -29,6 +29,7 @@ import (
 	"github.com/ugoneiva/HeimdallDNS/internal/security"
 	"github.com/ugoneiva/HeimdallDNS/internal/server"
 	"github.com/ugoneiva/HeimdallDNS/internal/store"
+	"github.com/ugoneiva/HeimdallDNS/internal/topology"
 	"github.com/ugoneiva/HeimdallDNS/internal/upstream"
 )
 
@@ -129,6 +130,7 @@ func build(d Deps) (*api, http.Handler) {
 	a.userRoutes(api)
 	api.HandleFunc("POST /api/wizard/done", a.wizardDone)
 	api.HandleFunc("GET /api/groups", a.listGroups)
+	api.HandleFunc("GET /api/topology", a.topology)
 	api.HandleFunc("PUT /api/groups", a.putGroups)
 	if d.DataDir != "" {
 		a.backupRoutes(api)
@@ -232,6 +234,7 @@ func (a *api) patchClient(w http.ResponseWriter, r *http.Request) {
 		Deny            *[]string `json:"deny"`
 		SkipGlobalLists *bool     `json:"skip_global_lists"`
 		Group           *string   `json:"group"`
+		Kind            *string   `json:"kind"`
 	}
 	if !readJSON(w, r, &body) {
 		return
@@ -254,6 +257,12 @@ func (a *api) patchClient(w http.ResponseWriter, r *http.Request) {
 				return errors.New("grupo não encontrado")
 			}
 			s.Group = *body.Group
+		}
+		if body.Kind != nil {
+			if !topology.ValidKind(*body.Kind) {
+				return errors.New("tipo de aparelho inválido")
+			}
+			s.Kind = *body.Kind
 		}
 		return nil
 	})

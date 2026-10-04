@@ -3,7 +3,7 @@
 
 import { useEffect, useState, type ComponentType } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { BookUser, Gauge, Globe, ListFilter, Network, Radar as RadarIcon, ScrollText, Settings as SettingsIcon, ShieldAlert } from 'lucide-react'
+import { BookUser, Gauge, Globe, Waypoints, ListFilter, Network, Radar as RadarIcon, ScrollText, Settings as SettingsIcon, ShieldAlert } from 'lucide-react'
 import { api, authEvents } from './api'
 import type { AuthState } from './types'
 import { cx } from './components/ui'
@@ -23,15 +23,17 @@ import { ConsoleApp } from './pages/Console'
 import { ActiveDirectory, useADInfo } from './pages/ActiveDirectory'
 import { DNS } from './pages/DNS'
 import { Wizard } from './pages/Wizard'
+import { NetworkMap } from './pages/NetworkMap'
 import { MFACard } from './pages/Settings'
 import { roleLabel, useAuth } from './lib/auth'
 import { t } from './lib/i18n'
 
-type Page = 'overview' | 'devices' | 'security' | 'queries' | 'lists' | 'dns' | 'dhcp' | 'ad' | 'settings'
+type Page = 'overview' | 'devices' | 'map' | 'security' | 'queries' | 'lists' | 'dns' | 'dhcp' | 'ad' | 'settings'
 
 const nav: { page: Page; path: string; label: string; icon: ComponentType<{ className?: string }> }[] = [
   { page: 'overview', path: '', label: t('Visão geral'), icon: Gauge },
   { page: 'devices', path: 'dispositivos', label: t('Dispositivos'), icon: RadarIcon },
+  { page: 'map', path: 'mapa', label: t('Mapa da rede'), icon: Waypoints },
   { page: 'security', path: 'seguranca', label: t('Segurança'), icon: ShieldAlert },
   { page: 'queries', path: 'consultas', label: t('Consultas'), icon: ScrollText },
   { page: 'lists', path: 'listas', label: t('Listas e regras'), icon: ListFilter },
@@ -173,6 +175,7 @@ function Shell({ version, onLogout }: { version: string; onLogout: () => void })
           <ReadOnlyNote page={page} />
           <ErrorBoundary resetKey={page}>
           {page === 'overview' && <Overview onOpenDevice={(id) => go('devices', id)} onOpenSecurity={() => go('security')} />}
+          {page === 'map' && <NetworkMap />}
           {page === 'devices' && <Devices openId={arg} onOpen={(id) => go('devices', id)} />}
           {page === 'security' && <Security onOpenDevice={(id) => go('devices', id)} />}
           {page === 'queries' && <QueryLog />}
