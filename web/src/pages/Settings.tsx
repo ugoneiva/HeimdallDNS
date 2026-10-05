@@ -19,6 +19,7 @@ import { roleLabel, useAuth, useCan } from '../lib/auth'
 import { LangPicker } from '../components/LangPicker'
 import { AboutLine } from '../components/About'
 import { PasskeysCard, RecoveryCodes, RecoveryStatus, SessionsCard } from './Account'
+import { ReportsCard } from './Reports'
 import { t } from '../lib/i18n'
 
 export function Settings({ onLogout }: { onLogout: () => void }) {
@@ -46,6 +47,8 @@ export function Settings({ onLogout }: { onLogout: () => void }) {
           <LangPicker />
         </div>
       </Card>
+
+      <ReportsCard />
 
       <Card title={t('Sobre este servidor')}>
         {s ? (

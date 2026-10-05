@@ -272,6 +272,20 @@ O mesmo alerta repetido em 10 minutos vira um aviso só; o seguinte diz quantos 
 
 Os segredos (token do bot, endereço do Teams, segredo do webhook, senha do SMTP) ficam no banco e nunca voltam ao painel. Na alta disponibilidade os canais vão para as réplicas, e cada nó avisa o que ele mesmo vê (o nome do servidor vai no rodapé).
 
+### Relatório periódico em PDF
+
+Em **Configurações → Relatórios**:
+- **Gerar PDF agora** (7 ou 30 dias), para qualquer papel;
+- **envio automático**, semanal (segunda-feira, semana anterior) ou mensal (dia 1, mês anterior), na hora escolhida.
+
+O PDF traz:
+- os números do período (consultas, bloqueadas, dispositivos ativos, alertas, cache e latência);
+- o gráfico de consultas por dia, com as bloqueadas em destaque;
+- os domínios mais bloqueados e os dispositivos mais ativos;
+- os alertas de segurança por gravidade e tipo, com os mais graves listados.
+
+O envio usa os canais de notificação com **Relatório periódico** ligado: o e-mail leva o PDF anexo, e Telegram, Teams e webhook recebem o resumo. Os PDFs ficam em `<data_dir>/reports` (os 24 últimos) e podem ser baixados pelo painel.
+
 ### DNS criptografado e aparelhos fora da rede
 
 O HeimdallDNS atende **DoT** (RFC 7858, porta 853) e **DoH** (RFC 8484, GET e POST, HTTP/2), além do DNS comum.
@@ -404,6 +418,8 @@ heimdalldns restore copia.tar.gz.age -restart         # restaura e reinicia
 | `GET/POST /api/tokens` · `DELETE /api/tokens/{id}` | tokens de API (`name`, `role`, `expires_days`); o token só volta na criação |
 | `GET /api/audit` | auditoria: alterações, logins e tentativas barradas (`range`, `limit`) |
 | `GET/PUT /api/notify` · `POST /api/notify/test/{id}` | canais de notificação, SMTP e últimos envios (administrador) |
+| `GET /api/reports` · `PUT /api/reports/settings` · `POST /api/reports/send` | relatórios guardados, agendamento e envio imediato |
+| `GET /api/reports/generate?days=7` · `GET /api/reports/file/{nome}` | gera e baixa o PDF; baixa um guardado |
 | `GET/DELETE /api/auth/sessions` · `DELETE /api/auth/sessions/{id}` | sessões da própria conta; sem `id` encerra todas as outras |
 | `GET /api/users/sessions` · `DELETE /api/users/sessions/{id}` | sessões de todas as contas (administrador) |
 | `POST /api/auth/mfa/recovery` | gera novos códigos de recuperação (`code` ou `passkey`) |

@@ -44,6 +44,7 @@ import (
 	"github.com/ugoneiva/HeimdallDNS/internal/notify"
 	"github.com/ugoneiva/HeimdallDNS/internal/nrd"
 	"github.com/ugoneiva/HeimdallDNS/internal/querylog"
+	"github.com/ugoneiva/HeimdallDNS/internal/report"
 	"github.com/ugoneiva/HeimdallDNS/internal/security"
 	"github.com/ugoneiva/HeimdallDNS/internal/server"
 	"github.com/ugoneiva/HeimdallDNS/internal/store"
@@ -311,6 +312,31 @@ func runServer() error {
 	if sec, err = security.New(secOpts); err != nil {
 		return err
 	}
+	reports := report.NewScheduler(report.Options{
+		Source: report.Source{Store: db, Node: node, Version: version, Name: func(id string) string {
+			if c, err := reg.Find(id); err == nil {
+				return c.Policy().Display
+			}
+			return ""
+		}},
+		Dir: filepath.Join(cfg.DataDir, "reports"),
+		Deliver: func(d *report.Data, pdf []byte, name string) {
+			text, fields := report.Summary(d)
+			nt.Send(notify.Event{Type: notify.EventReport, Severity: notify.SevLow, Title: d.Title, Text: text, Fields: fields,
+				Attachment: &notify.Attachment{Name: name, Type: "application/pdf", Data: pdf}})
+		},
+		LastRun: func() time.Time {
+			var t time.Time
+			_, _ = db.GetJSON(api.ReportLastKey, &t)
+			return t
+		},
+		SetLastRun: func(t time.Time) { _ = db.SetJSON(api.ReportLastKey, t) },
+		Logger:     log.With("componente", "relatorio"),
+	})
+	if err := api.LoadReport(db, reports); err != nil {
+		log.Warn("configuração do relatório inválida; seguindo sem ela", "erro", err)
+	}
+	go reports.Run(ctx)
 	go func() {
 		sec.Purge()
 		t := time.NewTicker(24 * time.Hour)
@@ -474,7 +500,7 @@ func runServer() error {
 				Context: ctx, Token: token, Version: version, Started: started,
 				Server: srv, Cache: dnsCache, Upstream: ups, Filter: flt, Clients: reg,
 				Store: db, Log: qlog, Security: sec, NRD: nrdCheck, UI: webui.FS(), Secure: tls, DHCP: dhcpSrv,
-				HA: haDeps, AD: adClient, Audit: auditExp, WebFilter: wf, Forward: fwd, Notify: nt,
+				HA: haDeps, AD: adClient, Audit: auditExp, WebFilter: wf, Forward: fwd, Notify: nt, Reports: reports,
 				ADLogin: api.ADLogin{Enabled: cfg.AD.Login.Enabled, AdminGroups: cfg.AD.Login.AdminGroups,
 					OperatorGroups: cfg.AD.Login.OperatorGroups, ViewerGroups: cfg.AD.Login.ViewerGroups, RequireMFA: cfg.AD.Login.RequireMFA},
 				Encrypted: api.Encrypted{

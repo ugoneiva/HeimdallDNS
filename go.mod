@@ -8,11 +8,13 @@ require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/fxamacker/cbor/v2 v2.9.4
 	github.com/go-ldap/ldap/v3 v3.4.14
+	github.com/go-pdf/fpdf v0.9.0
 	github.com/go-webauthn/webauthn v0.18.2
 	github.com/insomniacslk/dhcp v0.0.0-20260901064844-234b97448fae
 	github.com/miekg/dns v1.1.73
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/crypto v0.57.0
+	golang.org/x/image v0.46.0
 	golang.org/x/net v0.59.0
 	golang.org/x/sync v0.23.0
 	golang.org/x/term v0.46.0
