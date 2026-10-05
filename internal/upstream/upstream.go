@@ -96,7 +96,13 @@ type Group struct {
 	log     *slog.Logger
 	kick    chan struct{} // pede uma medição já (depois de trocar os servidores)
 	mu      sync.Mutex    // serializa Reconfigure
+	// onHealth avisa quando todos os upstreams caem (up=false) e quando
+	// algum volta (up=true).
+	onHealth atomic.Pointer[func(up bool, servers []string)]
 }
+
+// SetOnHealth registra o aviso de queda geral e volta dos upstreams.
+func (g *Group) SetOnHealth(f func(up bool, servers []string)) { g.onHealth.Store(&f) }
 
 func New(opts Options) (*Group, error) {
 	if opts.Logger == nil {
@@ -326,6 +332,7 @@ func (g *Group) HealthCheck(ctx context.Context, every time.Duration) {
 	}
 	// Mede todos em paralelo (também abre as conexões DoH/DoT antes da
 	// primeira consulta de um cliente).
+	wasUp := true
 	probe := func() {
 		var wg sync.WaitGroup
 		for _, m := range g.cur.Load().members {
@@ -339,6 +346,22 @@ func (g *Group) HealthCheck(ctx context.Context, every time.Duration) {
 			})
 		}
 		wg.Wait()
+		// Todos fora do ar é queda do DNS da rede inteira: avisa na mudança.
+		var servers []string
+		healthy := false
+		for _, m := range g.cur.Load().members {
+			servers = append(servers, m.addr)
+			healthy = healthy || m.healthy.Load()
+		}
+		if ctx.Err() == nil && healthy != wasUp {
+			wasUp = healthy
+			if !healthy {
+				g.log.Error("nenhum upstream responde: as consultas vão falhar", "upstreams", servers)
+			}
+			if f := g.onHealth.Load(); f != nil {
+				(*f)(healthy, servers)
+			}
+		}
 	}
 	probe()
 	g.CheckDNSSEC(ctx)

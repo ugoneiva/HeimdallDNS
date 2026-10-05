@@ -250,6 +250,28 @@ Pega aparelho infectado ou em loop sem afetar os outros. O loopback nunca é lim
 - **`upstream.require_dnssec: true`:** usa só os upstreams que validam. Se nenhum validar, usa todos e avisa no log.
 
 Cloudflare, Quad9 e Google validam.
+### Notificações
+
+Em **Notificações** (administrador), o HeimdallDNS avisa fora do painel:
+
+| Canal | Como configurar |
+|---|---|
+| **Telegram** | token do bot (@BotFather → `/newbot`) e o ID do chat ou grupo |
+| **Microsoft Teams** | no canal: *Fluxos de trabalho → Postar em um canal quando uma solicitação de webhook for recebida*; cole o endereço (mensagem em Adaptive Card) |
+| **E-mail** | destinatários; o servidor SMTP (STARTTLS, TLS ou sem) fica no cartão *Servidor de e-mail* |
+| **Webhook** | `POST` com JSON para SOAR, n8n, Shuffle ou scripts; com segredo, leva `X-Heimdall-Signature: sha256=<HMAC-SHA256 de "<X-Heimdall-Timestamp>.<corpo>">` |
+
+O que pode ser avisado (cada canal escolhe):
+- **alertas de segurança**, a partir de uma gravidade mínima (ameaça, DGA, túnel, recém-registrado, dispositivo novo, excesso de consultas);
+- **isolamento** e liberação de dispositivos (manual ou automático);
+- **upstreams fora do ar** (todos sem responder) e de volta;
+- **falhas do serviço:** backup automático e listas que deixaram de atualizar;
+- **relatório periódico**.
+
+O mesmo alerta repetido em 10 minutos vira um aviso só; o seguinte diz quantos foram juntados. O botão **Testar** manda uma mensagem na hora, e a página mostra os últimos envios com o erro de cada falha.
+
+Os segredos (token do bot, endereço do Teams, segredo do webhook, senha do SMTP) ficam no banco e nunca voltam ao painel. Na alta disponibilidade os canais vão para as réplicas, e cada nó avisa o que ele mesmo vê (o nome do servidor vai no rodapé).
+
 ### DNS criptografado e aparelhos fora da rede
 
 O HeimdallDNS atende **DoT** (RFC 7858, porta 853) e **DoH** (RFC 8484, GET e POST, HTTP/2), além do DNS comum.
@@ -381,6 +403,7 @@ heimdalldns restore copia.tar.gz.age -restart         # restaura e reinicia
 | `GET/POST /api/users` · `PATCH/DELETE /api/users/{id}` | contas do painel: criar, papel, desativar, redefinir senha, zerar MFA (`reset_mfa`) |
 | `GET/POST /api/tokens` · `DELETE /api/tokens/{id}` | tokens de API (`name`, `role`, `expires_days`); o token só volta na criação |
 | `GET /api/audit` | auditoria: alterações, logins e tentativas barradas (`range`, `limit`) |
+| `GET/PUT /api/notify` · `POST /api/notify/test/{id}` | canais de notificação, SMTP e últimos envios (administrador) |
 | `GET/DELETE /api/auth/sessions` · `DELETE /api/auth/sessions/{id}` | sessões da própria conta; sem `id` encerra todas as outras |
 | `GET /api/users/sessions` · `DELETE /api/users/sessions/{id}` | sessões de todas as contas (administrador) |
 | `POST /api/auth/mfa/recovery` | gera novos códigos de recuperação (`code` ou `passkey`) |

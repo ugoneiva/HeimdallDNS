@@ -285,6 +285,7 @@ type Registry struct {
 	byTok map[string]*Client
 
 	fresh     map[string]bool // criados e ainda não confirmados como novos (ver OnNew)
+	onIsolate atomic.Pointer[func(c *Client, isolated bool, reason string)]
 	groups    atomic.Pointer[groupSet]
 	vendors   atomic.Pointer[OUI]
 	enrich    chan netip.Addr
@@ -510,8 +511,16 @@ func (r *Registry) Isolate(c *Client, mode, reason string, exceptions []string) 
 	})
 	if err == nil {
 		r.log.Warn("cliente isolado", "id", c.id, "cliente", c.Policy().Display, "modo", c.Policy().IsolateMode, "motivo", reason)
+		if f := r.onIsolate.Load(); f != nil {
+			(*f)(c, true, reason)
+		}
 	}
 	return err
+}
+
+// SetOnIsolation avisa quando um aparelho é isolado ou liberado (notificações).
+func (r *Registry) SetOnIsolation(f func(c *Client, isolated bool, reason string)) {
+	r.onIsolate.Store(&f)
 }
 
 func (r *Registry) Release(c *Client) error {
@@ -521,6 +530,9 @@ func (r *Registry) Release(c *Client) error {
 	})
 	if err == nil {
 		r.log.Info("cliente liberado", "id", c.id, "cliente", c.Policy().Display)
+		if f := r.onIsolate.Load(); f != nil {
+			(*f)(c, false, "")
+		}
 	}
 	return err
 }

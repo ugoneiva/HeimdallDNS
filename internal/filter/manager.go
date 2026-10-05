@@ -59,6 +59,9 @@ type ManagerOptions struct {
 	CacheDir string // onde ficam as cópias baixadas
 	Interval time.Duration
 	Logger   *slog.Logger
+	// OnListError avisa quando uma lista que baixava passa a falhar (só na
+	// mudança, não a cada tentativa).
+	OnListError func(name, url string, err error)
 }
 
 // Manager baixa as listas, guarda uma cópia local e mantém o Matcher atual.
@@ -200,8 +203,12 @@ func (m *Manager) fetch(ctx context.Context, l ListSpec) {
 	defer m.mu.Unlock()
 	st := m.statusLocked(l)
 	if err != nil {
+		first := st.Error == ""
 		st.Error = err.Error()
 		m.log.Warn("falha ao baixar lista", "lista", l.Name, "erro", err)
+		if first && m.opts.OnListError != nil && ctx.Err() == nil {
+			go m.opts.OnListError(l.Name, l.URL, err)
+		}
 		return
 	}
 	st.Error = ""

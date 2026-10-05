@@ -116,6 +116,9 @@ type Options struct {
 	Store    *store.Store
 	Clients  *clients.Registry
 	Exporter Exporter // nil = sem exportação
+	// Notify recebe cada alerta novo (não as repetições), com o nome do
+	// aparelho e a resposta (alert ou isolated).
+	Notify   func(ev store.SecurityEvent, client, response string)
 	Defaults Settings // usados enquanto o painel não salvar outras
 	Logger   *slog.Logger
 }
@@ -212,6 +215,9 @@ func (m *Manager) Raise(a Alert) {
 				isNew = true // o isolamento sempre vai para o SIEM
 			}
 		}
+	}
+	if isNew && m.opts.Notify != nil {
+		m.opts.Notify(ev, m.clientName(a.ClientID), response)
 	}
 	if isNew {
 		m.log.Warn("alerta de segurança", "tipo", a.Kind, "gravidade", a.Severity, "cliente", a.ClientIP,

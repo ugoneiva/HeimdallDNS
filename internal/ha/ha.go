@@ -27,6 +27,7 @@ import (
 
 	"github.com/ugoneiva/HeimdallDNS/internal/clients"
 	"github.com/ugoneiva/HeimdallDNS/internal/forward"
+	"github.com/ugoneiva/HeimdallDNS/internal/notify"
 	"github.com/ugoneiva/HeimdallDNS/internal/security"
 	"github.com/ugoneiva/HeimdallDNS/internal/store"
 	"github.com/ugoneiva/HeimdallDNS/internal/webfilter"
@@ -61,6 +62,7 @@ type Snapshot struct {
 	Groups    []clients.Group        `json:"groups"`
 	WebFilter webfilter.Settings     `json:"webfilter"`
 	Forward   []forward.Rule         `json:"forward"` // encaminhamento condicional do painel
+	Notify    notify.Settings        `json:"notify"`  // canais de notificação (cada nó avisa o que ele vê)
 }
 
 // stamp calcula a versão (hash do conteúdo).

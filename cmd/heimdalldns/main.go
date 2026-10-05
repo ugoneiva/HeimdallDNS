@@ -41,6 +41,7 @@ import (
 	"github.com/ugoneiva/HeimdallDNS/internal/filter"
 	"github.com/ugoneiva/HeimdallDNS/internal/forward"
 	"github.com/ugoneiva/HeimdallDNS/internal/ha"
+	"github.com/ugoneiva/HeimdallDNS/internal/notify"
 	"github.com/ugoneiva/HeimdallDNS/internal/nrd"
 	"github.com/ugoneiva/HeimdallDNS/internal/querylog"
 	"github.com/ugoneiva/HeimdallDNS/internal/security"
@@ -63,7 +64,7 @@ var (
 var errRestart = errors.New("reinício pedido")
 
 // autoBackup gera as cópias automáticas: a primeira 5 min depois de subir.
-func autoBackup(ctx context.Context, a backup.Auto, every time.Duration, log *slog.Logger) {
+func autoBackup(ctx context.Context, a backup.Auto, every time.Duration, nt *notify.Manager, log *slog.Logger) {
 	t := time.NewTimer(5 * time.Minute)
 	defer t.Stop()
 	for {
@@ -73,6 +74,7 @@ func autoBackup(ctx context.Context, a backup.Auto, every time.Duration, log *sl
 		case <-t.C:
 			if name, err := a.RunOnce(); err != nil {
 				log.Error("backup automático falhou", "erro", err)
+				nt.Send(systemNotice("Backup automático falhou", err, [2]string{"Pasta", a.Dir}))
 			} else {
 				log.Info("backup automático gravado", "arquivo", name)
 			}
@@ -183,6 +185,12 @@ func runServer() error {
 		return err
 	}
 	defer db.Close()
+	node, _ := os.Hostname()
+	nt := notify.New(notify.Options{Node: node, Logger: log.With("componente", "notificacoes")})
+	if err := api.LoadNotify(db, nt); err != nil {
+		log.Warn("notificações do painel inválidas; seguindo sem elas", "erro", err)
+	}
+	go nt.Run(ctx)
 	backupDir := cfg.Backup.Dir
 	if backupDir == "" {
 		backupDir = filepath.Join(cfg.DataDir, "backups")
@@ -193,7 +201,7 @@ func runServer() error {
 	}
 	if cfg.Backup.Interval > 0 {
 		go autoBackup(ctx, backup.Auto{Options: backup.Options{Store: db, TempDir: cfg.DataDir, ConfigPath: configPath,
-			Full: cfg.Backup.Full, Version: version}, Dir: backupDir, Keep: cfg.Backup.Keep}, cfg.Backup.Interval, log.With("componente", "backup"))
+			Full: cfg.Backup.Full, Version: version}, Dir: backupDir, Keep: cfg.Backup.Keep}, cfg.Backup.Interval, nt, log.With("componente", "backup"))
 	}
 
 	ups, err := upstream.New(upstream.Options{
@@ -212,6 +220,7 @@ func runServer() error {
 	if err := api.LoadUpstream(db, ups); err != nil {
 		log.Warn("upstreams do painel inválidos; usando os do arquivo", "erro", err)
 	}
+	ups.SetOnHealth(func(up bool, servers []string) { nt.Send(upstreamNotice(up, servers)) })
 	go ups.HealthCheck(ctx, cfg.Upstream.HealthInterval)
 
 	fwRules := make([]forward.Rule, len(cfg.DNS.Conditional))
@@ -238,6 +247,9 @@ func runServer() error {
 		CacheDir: filepath.Join(cfg.DataDir, "lists"),
 		Interval: cfg.Filter.UpdateInterval,
 		Logger:   log.With("componente", "filtro"),
+		OnListError: func(name, url string, err error) {
+			nt.Send(systemNotice("Lista de bloqueio não atualizou: "+name, err, [2]string{"Endereço", url}))
+		},
 	})
 	if err := api.LoadUserFilter(db, flt); err != nil {
 		return err
@@ -258,6 +270,7 @@ func runServer() error {
 	if err != nil {
 		return err
 	}
+	reg.SetOnIsolation(func(c *clients.Client, isolated bool, reason string) { nt.Send(isolationNotice(c, isolated, reason)) })
 	if err := api.LoadGroups(db, reg); err != nil {
 		log.Warn("grupos de dispositivos inválidos; seguindo sem eles", "erro", err)
 	}
@@ -283,6 +296,7 @@ func runServer() error {
 	}()
 	secOpts := security.Options{
 		Store: db, Clients: reg, Logger: log.With("componente", "seguranca"),
+		Notify: func(ev store.SecurityEvent, client, response string) { nt.Send(securityNotice(ev, client, response)) },
 		Defaults: security.Settings{
 			DGA: cfg.Security.DGA, Tunnel: cfg.Security.Tunnel, NRD: cfg.Security.NRD,
 			NRDAction: cfg.Security.NRDAction, NRDMaxDays: max(1, int(cfg.Security.NRDMaxAge.Hours()/24)),
@@ -426,7 +440,7 @@ func runServer() error {
 		return err
 	}
 
-	haDeps, err := newHA(ctx, cfg, db, flt, sec, reg, srv, ups, wf, fwd, local, log.With("componente", "ha"))
+	haDeps, err := newHA(ctx, cfg, db, flt, sec, reg, srv, ups, wf, fwd, nt, local, log.With("componente", "ha"))
 	if err != nil {
 		return err
 	}
@@ -460,7 +474,7 @@ func runServer() error {
 				Context: ctx, Token: token, Version: version, Started: started,
 				Server: srv, Cache: dnsCache, Upstream: ups, Filter: flt, Clients: reg,
 				Store: db, Log: qlog, Security: sec, NRD: nrdCheck, UI: webui.FS(), Secure: tls, DHCP: dhcpSrv,
-				HA: haDeps, AD: adClient, Audit: auditExp, WebFilter: wf, Forward: fwd,
+				HA: haDeps, AD: adClient, Audit: auditExp, WebFilter: wf, Forward: fwd, Notify: nt,
 				ADLogin: api.ADLogin{Enabled: cfg.AD.Login.Enabled, AdminGroups: cfg.AD.Login.AdminGroups,
 					OperatorGroups: cfg.AD.Login.OperatorGroups, ViewerGroups: cfg.AD.Login.ViewerGroups, RequireMFA: cfg.AD.Login.RequireMFA},
 				Encrypted: api.Encrypted{
@@ -674,7 +688,7 @@ func newAD(ctx context.Context, cfg *config.Config, log *slog.Logger) (*ad.Clien
 // newHA liga a alta disponibilidade: o principal publica o snapshot; a
 // réplica o puxa e aplica (listas, regras, segurança, dispositivos, senha).
 func newHA(ctx context.Context, cfg *config.Config, db *store.Store, flt *filter.Manager, sec *security.Manager,
-	reg *clients.Registry, srv *server.Server, ups *upstream.Group, wf *webfilter.Manager, fwd *forward.Manager, localCfg map[string][]netip.Addr, log *slog.Logger) (api.HA, error) {
+	reg *clients.Registry, srv *server.Server, ups *upstream.Group, wf *webfilter.Manager, fwd *forward.Manager, nt *notify.Manager, localCfg map[string][]netip.Addr, log *slog.Logger) (api.HA, error) {
 	h := api.HA{Role: cfg.HA.Role}
 	switch cfg.HA.Role {
 	case ha.RolePrimary:
@@ -702,6 +716,7 @@ func newHA(ctx context.Context, cfg *config.Config, db *store.Store, flt *filter
 			if _, err = db.GetJSON(api.ForwardKey, &snap.Forward); err != nil {
 				return snap, err
 			}
+			snap.Notify = nt.Settings()
 			snap.WebFilter = wf.Settings()
 			if snap.Users, err = db.Users(); err != nil {
 				return snap, err
@@ -725,7 +740,7 @@ func newHA(ctx context.Context, cfg *config.Config, db *store.Store, flt *filter
 		}, log)
 		log.Info("nó principal: réplicas sincronizam em /api/sync/snapshot")
 	case ha.RoleReplica:
-		var lastLists, lastRules, lastLocal, lastUps, lastUsers, lastTokens, lastGroups, lastWeb, lastFwd string
+		var lastLists, lastRules, lastLocal, lastUps, lastUsers, lastTokens, lastGroups, lastWeb, lastFwd, lastNotify string
 		r, err := ha.NewReplica(ha.ReplicaOptions{
 			PrimaryURL: cfg.HA.PrimaryURL, Token: cfg.HA.SyncToken, InsecureTLS: cfg.HA.InsecureTLS, Logger: log,
 			Apply: func(s ha.Snapshot) error {
@@ -772,6 +787,15 @@ func newHA(ctx context.Context, cfg *config.Config, db *store.Store, flt *filter
 						return err
 					}
 					lastUps = string(b)
+				}
+				if b, _ := json.Marshal(s.Notify); string(b) != lastNotify {
+					if err := db.SetJSON(api.NotifyKey, s.Notify); err != nil {
+						return err
+					}
+					if err := nt.SetSettings(s.Notify); err != nil {
+						return err
+					}
+					lastNotify = string(b)
 				}
 				if b, _ := json.Marshal(s.Forward); string(b) != lastFwd {
 					if err := db.SetJSON(api.ForwardKey, s.Forward); err != nil {
