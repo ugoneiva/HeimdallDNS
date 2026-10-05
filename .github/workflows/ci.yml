@@ -43,7 +43,10 @@ jobs:
         run: npm run i18n
         working-directory: web
       - name: Painel compilado está em dia no repositório
-        run: git diff --exit-code --stat -- internal/webui/dist || (echo "rode 'make web' e commite internal/webui/dist" && exit 1)
+        # status, não diff: arquivo novo (assets com hash no nome) também conta.
+        run: |
+          git status --porcelain --untracked-files=all --ignored=matching -- internal/webui/dist | tee /tmp/painel.txt
+          [ ! -s /tmp/painel.txt ] || (echo "rode 'make web' e commite internal/webui/dist" && exit 1)
       - run: npm audit --omit=dev --audit-level=high
         working-directory: web
 
