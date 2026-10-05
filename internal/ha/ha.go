@@ -28,6 +28,7 @@ import (
 	"github.com/ugoneiva/HeimdallDNS/internal/clients"
 	"github.com/ugoneiva/HeimdallDNS/internal/security"
 	"github.com/ugoneiva/HeimdallDNS/internal/store"
+	"github.com/ugoneiva/HeimdallDNS/internal/webfilter"
 )
 
 const (
@@ -46,17 +47,18 @@ var (
 
 // Snapshot é tudo o que vai do principal para as réplicas.
 type Snapshot struct {
-	Version  string                 `json:"version"`
-	Lists    []store.List           `json:"lists"`
-	Allow    []string               `json:"allow"`
-	Deny     []string               `json:"deny"`
-	Security security.Settings      `json:"security"`
-	Users    []store.User           `json:"users"`  // contas do painel (hash da senha e MFA)
-	Tokens   []store.APIToken       `json:"tokens"` // tokens de API (só o hash)
-	Clients  []clients.State        `json:"clients"`
-	Local    []store.LocalRecord    `json:"local,omitempty"`
-	Upstream store.UpstreamSettings `json:"upstream"`
-	Groups   []clients.Group        `json:"groups"`
+	Version   string                 `json:"version"`
+	Lists     []store.List           `json:"lists"`
+	Allow     []string               `json:"allow"`
+	Deny      []string               `json:"deny"`
+	Security  security.Settings      `json:"security"`
+	Users     []store.User           `json:"users"`  // contas do painel (hash da senha e MFA)
+	Tokens    []store.APIToken       `json:"tokens"` // tokens de API (só o hash)
+	Clients   []clients.State        `json:"clients"`
+	Local     []store.LocalRecord    `json:"local,omitempty"`
+	Upstream  store.UpstreamSettings `json:"upstream"`
+	Groups    []clients.Group        `json:"groups"`
+	WebFilter webfilter.Settings     `json:"webfilter"`
 }
 
 // stamp calcula a versão (hash do conteúdo).

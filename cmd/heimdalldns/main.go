@@ -46,6 +46,7 @@ import (
 	"github.com/ugoneiva/HeimdallDNS/internal/store"
 	"github.com/ugoneiva/HeimdallDNS/internal/tlsconf"
 	"github.com/ugoneiva/HeimdallDNS/internal/upstream"
+	"github.com/ugoneiva/HeimdallDNS/internal/webfilter"
 	"github.com/ugoneiva/HeimdallDNS/internal/webui"
 )
 
@@ -245,6 +246,13 @@ func runServer() error {
 	if err := api.LoadGroups(db, reg); err != nil {
 		log.Warn("grupos de dispositivos inválidos; seguindo sem eles", "erro", err)
 	}
+	// Filtro web: só as categorias em uso (globais ou de algum grupo) são baixadas.
+	wf := webfilter.New(webfilter.Options{CacheDir: filepath.Join(cfg.DataDir, "lists"), Interval: cfg.Filter.UpdateInterval,
+		Logger: log.With("componente", "filtro-web")})
+	if err := api.LoadWebFilter(db, wf, reg); err != nil {
+		log.Warn("configuração do filtro web inválida; seguindo sem ela", "erro", err)
+	}
+	go wf.Run(ctx)
 
 	exp, err := export.New(export.Options{
 		File: cfg.Export.File, Syslog: cfg.Export.Syslog, Queries: cfg.Export.Queries,
@@ -361,6 +369,7 @@ func runServer() error {
 		Upstream:     ups,
 		Clients:      reg,
 		NRD:          nrdCheck,
+		WebFilter:    wf,
 		LocalLookup:  dhcpLookup(dhcpSrv),
 		LocalPTR:     dhcpPTR(dhcpSrv),
 		TLS:          tlsCfg,
@@ -396,7 +405,7 @@ func runServer() error {
 		return err
 	}
 
-	haDeps, err := newHA(ctx, cfg, db, flt, sec, reg, srv, ups, local, log.With("componente", "ha"))
+	haDeps, err := newHA(ctx, cfg, db, flt, sec, reg, srv, ups, wf, local, log.With("componente", "ha"))
 	if err != nil {
 		return err
 	}
@@ -430,7 +439,7 @@ func runServer() error {
 				Context: ctx, Token: token, Version: version, Started: started,
 				Server: srv, Cache: dnsCache, Upstream: ups, Filter: flt, Clients: reg,
 				Store: db, Log: qlog, Security: sec, NRD: nrdCheck, UI: webui.FS(), Secure: tls, DHCP: dhcpSrv,
-				HA: haDeps, AD: adClient, Audit: auditExp,
+				HA: haDeps, AD: adClient, Audit: auditExp, WebFilter: wf,
 				ADLogin: api.ADLogin{Enabled: cfg.AD.Login.Enabled, AdminGroups: cfg.AD.Login.AdminGroups,
 					OperatorGroups: cfg.AD.Login.OperatorGroups, ViewerGroups: cfg.AD.Login.ViewerGroups, RequireMFA: cfg.AD.Login.RequireMFA},
 				Encrypted: api.Encrypted{
@@ -643,7 +652,7 @@ func newAD(ctx context.Context, cfg *config.Config, log *slog.Logger) (*ad.Clien
 // newHA liga a alta disponibilidade: o principal publica o snapshot; a
 // réplica o puxa e aplica (listas, regras, segurança, dispositivos, senha).
 func newHA(ctx context.Context, cfg *config.Config, db *store.Store, flt *filter.Manager, sec *security.Manager,
-	reg *clients.Registry, srv *server.Server, ups *upstream.Group, localCfg map[string][]netip.Addr, log *slog.Logger) (api.HA, error) {
+	reg *clients.Registry, srv *server.Server, ups *upstream.Group, wf *webfilter.Manager, localCfg map[string][]netip.Addr, log *slog.Logger) (api.HA, error) {
 	h := api.HA{Role: cfg.HA.Role}
 	switch cfg.HA.Role {
 	case ha.RolePrimary:
@@ -668,6 +677,7 @@ func newHA(ctx context.Context, cfg *config.Config, db *store.Store, flt *filter
 			if _, err = db.GetJSON(api.GroupsKey, &snap.Groups); err != nil {
 				return snap, err
 			}
+			snap.WebFilter = wf.Settings()
 			if snap.Users, err = db.Users(); err != nil {
 				return snap, err
 			}
@@ -687,7 +697,7 @@ func newHA(ctx context.Context, cfg *config.Config, db *store.Store, flt *filter
 		}, log)
 		log.Info("nó principal: réplicas sincronizam em /api/sync/snapshot")
 	case ha.RoleReplica:
-		var lastLists, lastRules, lastLocal, lastUps, lastUsers, lastTokens, lastGroups string
+		var lastLists, lastRules, lastLocal, lastUps, lastUsers, lastTokens, lastGroups, lastWeb string
 		r, err := ha.NewReplica(ha.ReplicaOptions{
 			PrimaryURL: cfg.HA.PrimaryURL, Token: cfg.HA.SyncToken, InsecureTLS: cfg.HA.InsecureTLS, Logger: log,
 			Apply: func(s ha.Snapshot) error {
@@ -744,6 +754,16 @@ func newHA(ctx context.Context, cfg *config.Config, db *store.Store, flt *filter
 					}
 					lastGroups = string(b)
 				}
+				if b, _ := json.Marshal(s.WebFilter); string(b) != lastWeb {
+					if err := wf.SetSettings(s.WebFilter); err != nil {
+						return err
+					}
+					if err := db.SetJSON(api.WebFilterKey, s.WebFilter); err != nil {
+						return err
+					}
+					lastWeb = string(b)
+				}
+				api.UpdateWebUsed(wf, reg)
 				if b, _ := json.Marshal(s.Users); string(b) != lastUsers {
 					// Mantém o que é deste nó: último acesso e o passo do MFA já
 					// usado (senão um código poderia ser reusado aqui).

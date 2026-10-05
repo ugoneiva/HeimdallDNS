@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ugoneiva/HeimdallDNS/internal/clients"
 	"github.com/ugoneiva/HeimdallDNS/internal/filter"
 	"github.com/ugoneiva/HeimdallDNS/internal/store"
 )
@@ -269,6 +270,7 @@ func (a *api) testDomain(w http.ResponseWriter, r *http.Request) {
 	global := a.Filter.Matcher().Match(name)
 	out["global"] = map[string]string{"verdict": global.Verdict.String(), "rule": global.Rule}
 	useGlobal := true
+	var pol *clients.Policy
 
 	if ref := r.URL.Query().Get("client"); ref != "" {
 		c, err := a.Clients.Find(ref)
@@ -277,6 +279,7 @@ func (a *api) testDomain(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		p := c.Policy()
+		pol = p
 		res := p.Match(name)
 		out["client"] = map[string]any{
 			"id": c.ID(), "name": p.Display, "isolated": p.Isolated,
@@ -308,6 +311,21 @@ func (a *api) testDomain(w http.ResponseWriter, r *http.Request) {
 					verdict, rule, source = "blocked", r, "nrd"
 				}
 			}
+		}
+	}
+	// Filtro web: as categorias globais e as do grupo do aparelho (uma exceção
+	// do aparelho ou global vence).
+	excepted := (source == "client" || source == "global") && verdict == "allowed"
+	if a.WebFilter != nil {
+		usesGlobal := pol == nil || !pol.SkipGlobal
+		if verdict == "allowed" && !excepted {
+			if wr, cat, block := a.WebFilter.Check(name, usesGlobal, pol.WebCategories()); block {
+				verdict, rule, source = "blocked", "filtro web "+cat+": "+wr, "webfilter"
+				out["web_category"] = cat
+			}
+		}
+		if target := a.WebFilter.SafeSearch(name, usesGlobal, pol.SafeSearch()); target != "" {
+			out["safesearch"] = strings.TrimSuffix(target, ".")
 		}
 	}
 	if global.Category != "" {

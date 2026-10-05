@@ -72,6 +72,9 @@ func (a *api) putGroups(w http.ResponseWriter, r *http.Request) {
 	}
 	err := clients.ValidateGroups(body.Groups)
 	if err == nil {
+		err = validWebCategories(body.Groups)
+	}
+	if err == nil {
 		err = a.Store.SetJSON(GroupsKey, body.Groups)
 	}
 	if err == nil {
@@ -81,6 +84,10 @@ func (a *api) putGroups(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err)
 		return
+	}
+	if a.WebFilter != nil {
+		UpdateWebUsed(a.WebFilter, a.Clients)
+		a.Cache.Flush()
 	}
 	a.listGroups(w, r)
 }

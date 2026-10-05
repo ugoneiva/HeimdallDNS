@@ -69,6 +69,17 @@ type NRDBlocker interface {
 	Block(name string) (rule string, block bool)
 }
 
+// WebFilter é o filtro web por categorias e a busca segura.
+type WebFilter interface {
+	// Check aplica as categorias globais (global) e as do grupo (extra).
+	Check(name string, global bool, extra []string) (rule, category string, blocked bool)
+	// SafeSearch devolve o destino da busca segura ("" = não se aplica).
+	SafeSearch(name string, global, group bool) string
+}
+
+// CategoryWebPrefix marca no evento um bloqueio do filtro web ("web:adulto").
+const CategoryWebPrefix = "web:"
+
 // Exchanger é o que o servidor precisa dos upstreams.
 type Exchanger interface {
 	Exchange(ctx context.Context, req *dns.Msg) (*dns.Msg, string, error)
@@ -85,6 +96,7 @@ type Options struct {
 	Upstream     Exchanger
 	Clients      *clients.Registry // nil = sem radar
 	NRD          NRDBlocker        // nil = sem bloqueio de recém-registrados
+	WebFilter    WebFilter         // nil = sem filtro web
 	// Nomes dinâmicos (concessões DHCP): <nome>.<domínio> e o reverso.
 	LocalLookup func(name string) []netip.Addr
 	LocalPTR    func(ip netip.Addr) string
@@ -376,7 +388,16 @@ func (s *Server) handle(r *dns.Msg, ev *Event, pol *clients.Policy, trusted, lim
 	case filter.Allowed:
 		ev.Rule, global = "cliente: @@"+res.Rule, false
 	}
-	if global && (pol == nil || !pol.SkipGlobal) {
+	usesGlobal := pol == nil || !pol.SkipGlobal
+	// Busca segura: troca o buscador pelo endereço "seguro" oficial (não é
+	// bloqueio, então vale mesmo com exceção).
+	if s.opts.WebFilter != nil {
+		if target := s.opts.WebFilter.SafeSearch(ev.Name, usesGlobal, pol.SafeSearch()); target != "" {
+			ev.Status, ev.Rule = StatusForwarded, "busca segura → "+strings.TrimSuffix(target, ".")
+			return s.cnameAnswer(r, target)
+		}
+	}
+	if global && usesGlobal {
 		switch res := s.opts.Filter().Match(ev.Name); res.Verdict {
 		case filter.Blocked:
 			ev.Status, ev.Rule, ev.Category = StatusBlocked, res.Rule, res.Category
@@ -384,6 +405,12 @@ func (s *Server) handle(r *dns.Msg, ev *Event, pol *clients.Policy, trusted, lim
 		case filter.Allowed:
 			ev.Rule = "@@" + res.Rule // liberado por exceção; segue o fluxo normal
 			global = false            // exceção também vale contra o bloqueio de recém-registrados
+		}
+	}
+	if global && s.opts.WebFilter != nil {
+		if rule, cat, block := s.opts.WebFilter.Check(ev.Name, usesGlobal, pol.WebCategories()); block {
+			ev.Status, ev.Rule, ev.Category = StatusBlocked, "filtro web "+cat+": "+rule, CategoryWebPrefix+cat
+			return s.blockedAnswer(r, s.opts.BlockMode)
 		}
 	}
 	if global && s.opts.NRD != nil {
@@ -514,6 +541,28 @@ func (s *Server) localAnswer(r *dns.Msg, name string) *dns.Msg {
 			m.Answer = append(m.Answer, &dns.AAAA{Hdr: hdr, AAAA: ip.AsSlice()})
 		}
 	}
+	return m
+}
+
+// cnameAnswer responde com um apelido para target e, junto, a resposta do
+// destino (do cache ou do upstream). Se o upstream falhar, vai só o CNAME e o
+// resolvedor do aparelho completa.
+func (s *Server) cnameAnswer(r *dns.Msg, target string) *dns.Msg {
+	q := r.Question[0]
+	m := reply(r, dns.RcodeSuccess)
+	m.Answer = []dns.RR{&dns.CNAME{Hdr: dns.RR_Header{Name: q.Name, Rrtype: dns.TypeCNAME, Class: dns.ClassINET, Ttl: 300}, Target: target}}
+	if q.Qtype == dns.TypeCNAME {
+		return m
+	}
+	key := cache.Key{Name: target, Qtype: q.Qtype, Qclass: q.Qclass}
+	up, _, hit := s.opts.Cache.Get(key)
+	if !hit {
+		var err error
+		if up, _, err = s.resolve(key, false); err != nil {
+			return m
+		}
+	}
+	m.Answer = append(m.Answer, up.Copy().Answer...)
 	return m
 }
 

@@ -25,20 +25,23 @@ type Group struct {
 	Deny            []string   `json:"deny,omitempty"`
 	SkipGlobalLists bool       `json:"skip_global_lists,omitempty"`
 	Schedules       []Schedule `json:"schedules,omitempty"`
+	Categories      []string   `json:"categories,omitempty"` // filtro web: categorias sempre bloqueadas
+	SafeSearch      bool       `json:"safesearch,omitempty"` // busca segura forçada
 }
 
 // Schedule é uma janela de horário com regras extras. Se End vier antes de
 // Start, a janela passa da meia-noite (ex.: 22:00 a 07:00). Start igual a
 // End vale o dia inteiro.
 type Schedule struct {
-	Name     string   `json:"name"`
-	Days     []int    `json:"days,omitempty"` // 0 = domingo … 6 = sábado; vazio = todos
-	Start    string   `json:"start"`          // "HH:MM"
-	End      string   `json:"end"`            // "HH:MM"
-	BlockAll bool     `json:"block_all,omitempty"`
-	Allow    []string `json:"allow,omitempty"`
-	Deny     []string `json:"deny,omitempty"`
-	Disabled bool     `json:"disabled,omitempty"`
+	Name       string   `json:"name"`
+	Days       []int    `json:"days,omitempty"` // 0 = domingo … 6 = sábado; vazio = todos
+	Start      string   `json:"start"`          // "HH:MM"
+	End        string   `json:"end"`            // "HH:MM"
+	BlockAll   bool     `json:"block_all,omitempty"`
+	Allow      []string `json:"allow,omitempty"`
+	Deny       []string `json:"deny,omitempty"`
+	Categories []string `json:"categories,omitempty"` // filtro web: categorias bloqueadas nesse horário
+	Disabled   bool     `json:"disabled,omitempty"`
 }
 
 type compiledSchedule struct {
@@ -47,6 +50,7 @@ type compiledSchedule struct {
 	start, end int // minutos desde a meia-noite
 	blockAll   bool
 	rules      *filter.Matcher
+	categories []string
 }
 
 // active diz se a janela vale no instante t (no fuso local do servidor).
@@ -120,9 +124,10 @@ func compileGroups(gs []Group) (*groupSet, error) {
 				}
 				cs.days[d] = true
 			}
-			if !s.BlockAll && len(s.Allow)+len(s.Deny) == 0 {
+			if !s.BlockAll && len(s.Allow)+len(s.Deny)+len(s.Categories) == 0 {
 				return nil, fmt.Errorf("grupo %s, horário %s: informe o que bloquear ou marque a pausa total", g.Name, s.Name)
 			}
+			cs.categories = s.Categories
 			cs.rules, bad = filter.CompileUserRules(s.Allow, s.Deny)
 			if len(bad) > 0 {
 				return nil, fmt.Errorf("grupo %s, horário %s: regras inválidas: %s", g.Name, s.Name, strings.Join(bad, ", "))
@@ -154,6 +159,33 @@ func (g *compiledGroup) match(name string, now time.Time) filter.Result {
 		res.Rule = "grupo " + g.Name + ": " + res.Rule
 	}
 	return res
+}
+
+// webCategories junta as categorias do filtro web do grupo e dos horários
+// que valem agora (nil quando não há nenhuma: o caso comum não aloca).
+func (g *compiledGroup) webCategories(now time.Time) []string {
+	out := g.Categories
+	for _, s := range g.schedules {
+		if len(s.categories) > 0 && s.active(now) {
+			out = append(slices.Clip(out), s.categories...)
+		}
+	}
+	return out
+}
+
+// UsedCategories são as categorias do filtro web citadas por algum grupo
+// (para carregar só as listas em uso).
+func (r *Registry) UsedCategories() []string {
+	var out []string
+	for _, g := range r.groups.Load().list {
+		out = append(out, g.Categories...)
+		for _, s := range g.Schedules {
+			if !s.Disabled {
+				out = append(out, s.Categories...)
+			}
+		}
+	}
+	return out
 }
 
 // ActiveSchedules lista as janelas que valem agora no grupo (para o painel).

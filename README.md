@@ -141,6 +141,45 @@ Esqueceu a senha? `sudo heimdalldns passwd -user nome` (padrão: `admin`). Perde
 
 As listas e regras criadas pelo painel ficam no banco e se somam às do arquivo de configuração. As do arquivo aparecem no painel só para leitura.
 
+### Filtro web por categorias
+
+Na tela **Filtro web**, cada categoria junta listas públicas gratuitas, bem mantidas e com licença que permite uso comercial:
+
+| Categoria | Fonte | Licença |
+|---|---|---|
+| Adulto | HaGeZi NSFW | GPL-3.0 |
+| Apostas | HaGeZi Gambling (medium) | GPL-3.0 |
+| Ameaças | HaGeZi Threat Intelligence (mini) | GPL-3.0 |
+| Golpes e lojas falsas | HaGeZi Fake | GPL-3.0 |
+| Pirataria e torrent | HaGeZi Anti-Piracy + Block List Project Torrent | GPL-3.0 / Unlicense |
+| VPN, proxy e DNS alternativo | HaGeZi DoH/VPN/Proxy bypass | GPL-3.0 |
+| Redes sociais, Jogos | catálogo interno + UT1 (Universidade de Toulouse) | CC BY-SA 4.0 |
+| Mensagens, Vídeo e streaming | catálogo interno | — |
+| Namoro, Encurtadores | UT1 | CC BY-SA 4.0 |
+| Drogas, Cripto e mineração | Block List Project | Unlicense |
+
+Onde a categoria vale:
+- **Para todos:** um clique na tela.
+- **Para um grupo:** sempre, ou só num horário do grupo (ex.: Crianças sem redes sociais; jogos bloqueados das 22h às 7h).
+
+Só as categorias em uso são baixadas e carregadas: com adulto, apostas, ameaças e bypass ligados (cerca de 530 mil regras), a memória ficou em ~54 MB no teste.
+
+Precedência:
+- uma exceção do aparelho ou uma exceção global vence a categoria;
+- aparelhos que não usam as listas globais não recebem as categorias globais, só as do grupo.
+
+**Busca segura (SafeSearch):**
+- O que faz: Google, Bing e DuckDuckGo passam a responder sem resultados explícitos, e o YouTube entra no modo restrito (estrito ou moderado).
+- Como funciona: é pelo próprio DNS, com os endereços "seguros" oficiais de cada serviço, e não precisa instalar nada nos aparelhos.
+- Onde vale: para todos ou por grupo.
+
+**Para ninguém escapar:**
+- bloqueie a categoria "VPN, proxy e DNS alternativo";
+- no roteador, bloqueie a saída das portas 53 e 853 para qualquer DNS que não seja o HeimdallDNS;
+- entregue só o HeimdallDNS pelo DHCP.
+
+Limite do filtro por DNS: ele vê o domínio, não a página. Bloqueia o site inteiro, não um vídeo ou um post.
+
 ### Grupos de dispositivos e horários
 
 Em **Dispositivos → Grupos e horários**, crie grupos como Crianças, Visitantes ou Financeiro. Cada grupo tem:

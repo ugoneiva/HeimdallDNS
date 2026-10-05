@@ -92,6 +92,18 @@ func (p *Policy) Match(name string) filter.Result {
 	return p.group.match(name, p.now())
 }
 
+// WebCategories são as categorias do filtro web do grupo do aparelho que
+// valem agora (as globais ficam com o filtro web).
+func (p *Policy) WebCategories() []string {
+	if p == nil || p.group == nil {
+		return nil
+	}
+	return p.group.webCategories(p.now())
+}
+
+// SafeSearch diz se o grupo do aparelho força a busca segura.
+func (p *Policy) SafeSearch() bool { return p != nil && p.group != nil && p.group.SafeSearch }
+
 // Record é o cliente como vai para o banco.
 type Record struct {
 	ID        string

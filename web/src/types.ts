@@ -56,6 +56,7 @@ export type GroupSchedule = {
   block_all?: boolean
   allow?: string[]
   deny?: string[]
+  categories?: string[]
   disabled?: boolean
 }
 export type DeviceGroup = {
@@ -66,6 +67,8 @@ export type DeviceGroup = {
   deny?: string[]
   skip_global_lists?: boolean
   schedules?: GroupSchedule[]
+  categories?: string[]
+  safesearch?: boolean
   members: string[]
   active: string[]
 }
@@ -436,4 +439,20 @@ export type TopologyResponse = {
   version: string
   history: boolean
   kinds: string[]
+}
+
+export type WebCategory = {
+  id: string
+  name: string
+  description: string
+  icon: string
+  sources: { name: string; url: string; license: string; homepage: string }[]
+  rules?: string[]
+  global: boolean
+  groups: string[]
+  status: { loaded: boolean; rules: number; updated_at?: string; error?: string }
+}
+export type WebFilterState = {
+  settings: { global: string[]; safesearch: boolean; youtube: string }
+  categories: WebCategory[]
 }

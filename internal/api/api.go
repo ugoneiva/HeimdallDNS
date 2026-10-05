@@ -31,6 +31,7 @@ import (
 	"github.com/ugoneiva/HeimdallDNS/internal/store"
 	"github.com/ugoneiva/HeimdallDNS/internal/topology"
 	"github.com/ugoneiva/HeimdallDNS/internal/upstream"
+	"github.com/ugoneiva/HeimdallDNS/internal/webfilter"
 )
 
 type Deps struct {
@@ -49,10 +50,11 @@ type Deps struct {
 	NRD       NRDInfo      // idade dos domínios (nil = sem checagem)
 	DHCP      *dhcp.Server // nil = DHCP desligado
 	HA        HA
-	Console   *console.Console // modo console (MSP): só as rotas do console
-	AD        *ad.Client       // nil = sem integração com o Active Directory
-	ADLogin   ADLogin          // entrada no painel com as contas do AD
-	Audit     AuditExporter    // operações administrativas para o SIEM (opcional)
+	Console   *console.Console   // modo console (MSP): só as rotas do console
+	AD        *ad.Client         // nil = sem integração com o Active Directory
+	ADLogin   ADLogin            // entrada no painel com as contas do AD
+	WebFilter *webfilter.Manager // nil = sem filtro web
+	Audit     AuditExporter      // operações administrativas para o SIEM (opcional)
 	Encrypted Encrypted
 	// Backup e restauração (DataDir vazio = sem as rotas).
 	DataDir    string
@@ -131,6 +133,11 @@ func build(d Deps) (*api, http.Handler) {
 	api.HandleFunc("POST /api/wizard/done", a.wizardDone)
 	api.HandleFunc("GET /api/groups", a.listGroups)
 	api.HandleFunc("GET /api/topology", a.topology)
+	if d.WebFilter != nil {
+		api.HandleFunc("GET /api/webfilter", a.getWebFilter)
+		api.HandleFunc("PUT /api/webfilter", a.putWebFilter)
+		api.HandleFunc("POST /api/webfilter/refresh", a.refreshWebFilter)
+	}
 	api.HandleFunc("PUT /api/groups", a.putGroups)
 	if d.DataDir != "" {
 		a.backupRoutes(api)

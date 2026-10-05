@@ -3,7 +3,7 @@
 
 import { useEffect, useState, type ComponentType } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { BookUser, Gauge, Globe, Waypoints, ListFilter, Network, Radar as RadarIcon, ScrollText, Settings as SettingsIcon } from 'lucide-react'
+import { BookUser, ShieldHalf, Gauge, Globe, Waypoints, ListFilter, Network, Radar as RadarIcon, ScrollText, Settings as SettingsIcon } from 'lucide-react'
 import { api, authEvents } from './api'
 import type { AuthState } from './types'
 import { cx } from './components/ui'
@@ -25,11 +25,12 @@ import { ActiveDirectory, useADInfo } from './pages/ActiveDirectory'
 import { DNS } from './pages/DNS'
 import { Wizard } from './pages/Wizard'
 import { NetworkMap } from './pages/NetworkMap'
+import { WebFilter } from './pages/WebFilter'
 import { MFACard } from './pages/Settings'
 import { roleLabel, useAuth } from './lib/auth'
 import { t } from './lib/i18n'
 
-type Page = 'overview' | 'devices' | 'map' | 'security' | 'queries' | 'lists' | 'dns' | 'dhcp' | 'ad' | 'settings'
+type Page = 'overview' | 'devices' | 'map' | 'webfilter' | 'security' | 'queries' | 'lists' | 'dns' | 'dhcp' | 'ad' | 'settings'
 
 const nav: { page: Page; path: string; label: string; icon: ComponentType<{ className?: string }> }[] = [
   { page: 'overview', path: '', label: t('Visão geral'), icon: Gauge },
@@ -37,6 +38,7 @@ const nav: { page: Page; path: string; label: string; icon: ComponentType<{ clas
   { page: 'map', path: 'mapa', label: t('Mapa da rede'), icon: Waypoints },
   { page: 'security', path: 'seguranca', label: t('Segurança'), icon: HornIcon },
   { page: 'queries', path: 'consultas', label: t('Consultas'), icon: ScrollText },
+  { page: 'webfilter', path: 'filtro-web', label: t('Filtro web'), icon: ShieldHalf },
   { page: 'lists', path: 'listas', label: t('Listas e regras'), icon: ListFilter },
   { page: 'dns', path: 'dns', label: t('DNS'), icon: Globe },
   { page: 'dhcp', path: 'dhcp', label: t('DHCP'), icon: Network },
@@ -181,6 +183,7 @@ function Shell({ version, onLogout }: { version: string; onLogout: () => void })
           {page === 'devices' && <Devices openId={arg} onOpen={(id) => go('devices', id)} />}
           {page === 'security' && <Security onOpenDevice={(id) => go('devices', id)} />}
           {page === 'queries' && <QueryLog />}
+          {page === 'webfilter' && <WebFilter />}
           {page === 'lists' && <Lists />}
           {page === 'dns' && <DNS />}
           {page === 'dhcp' && <DHCP onOpenDevice={(id) => go('devices', id)} />}
@@ -195,7 +198,7 @@ function Shell({ version, onLogout }: { version: string; onLogout: () => void })
 
 // Páginas que exigem um papel para alterar algo (o servidor confere de novo).
 const needs: Partial<Record<Page, 'operator' | 'admin'>> = {
-  devices: 'operator', security: 'operator', queries: 'operator', dhcp: 'operator', lists: 'admin', dns: 'admin',
+  devices: 'operator', security: 'operator', queries: 'operator', dhcp: 'operator', lists: 'admin', dns: 'admin', webfilter: 'admin',
 }
 
 function ReadOnlyNote({ page }: { page: Page }) {
@@ -239,6 +242,7 @@ const subtitles: Partial<Record<Page, string>> = {
   map: t('Com quem cada aparelho fala'),
   security: t('O Gjallarhorn soa quando há perigo'),
   queries: t('Cada pergunta feita ao DNS, ao vivo'),
+  webfilter: t('Categorias que não atravessam a Bifröst'),
   lists: t('O que não atravessa a ponte'),
   dns: t('A saída pela Bifröst e os nomes da sua rede'),
   dhcp: t('Endereços entregues aos aparelhos'),

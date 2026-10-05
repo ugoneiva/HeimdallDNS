@@ -7,6 +7,7 @@ import { Clock, Plus, Trash, Users } from 'lucide-react'
 import { api } from '../api'
 import type { DeviceGroup, GroupSchedule } from '../types'
 import { useCan } from '../lib/auth'
+import { webCategory } from './WebFilter'
 import { Button, Card, ErrorNote, Field, Input, LabeledSwitch, Modal, StatusBadge, Textarea, cx } from '../components/ui'
 import { t } from '../lib/i18n'
 
@@ -75,9 +76,19 @@ export function GroupsCard() {
               </div>
               {g.description && <p className="mb-1.5 text-xs text-ink-2">{g.description}</p>}
               <p className="text-xs text-ink-2">
-                {(g.deny?.length ?? 0) > 0 ? t('Sempre bloqueia: {regras}', { regras: g.deny!.join(', ') }) : t('Sem bloqueio fixo')}
+                {(g.deny?.length ?? 0) > 0 ? t('Sempre bloqueia: {regras}', { regras: g.deny!.join(', ') }) : (g.categories?.length ?? 0) > 0 ? '' : t('Sem bloqueio fixo')}
                 {g.skip_global_lists ? t(' · sem as listas globais') : ''}
               </p>
+              {((g.categories?.length ?? 0) > 0 || g.safesearch) && (
+                <p className="mt-1 flex flex-wrap gap-1">
+                  {(g.categories ?? []).map((c) => (
+                    <StatusBadge key={c} tone="critical">
+                      {webCategory[c]?.name ?? c}
+                    </StatusBadge>
+                  ))}
+                  {g.safesearch && <StatusBadge tone="good">{t('busca segura')}</StatusBadge>}
+                </p>
+              )}
               {(g.schedules ?? []).length > 0 && (
                 <ul className="mt-2 space-y-1">
                   {g.schedules!.map((s) => (
@@ -163,6 +174,14 @@ function GroupEditor({ group, onClose, onSave, onDelete, saving, error }: {
           onChange={(v) => setG({ ...g, skip_global_lists: !v })}
           label={t('Aplicar também as listas de bloqueio globais')}
         />
+        <Field label={t('Filtro web: sempre bloquear as categorias')}>
+          <CategoryPicker value={g.categories ?? []} onChange={(categories) => setG({ ...g, categories })} />
+        </Field>
+        <LabeledSwitch
+          checked={!!g.safesearch}
+          onChange={(v) => setG({ ...g, safesearch: v })}
+          label={t('Busca segura (Google, Bing, DuckDuckGo) e YouTube restrito para este grupo')}
+        />
 
         <div>
           <div className="mb-2 flex items-center">
@@ -245,7 +264,40 @@ function ScheduleEditor({ s, onChange, onRemove }: { s: GroupSchedule; onChange:
           <Textarea rows={2} value={(s.allow ?? []).join('\n')} onChange={(e) => onChange({ ...s, allow: lines(e.target.value) })} placeholder={t('escola.edu.br')} />
         </Field>
       </div>
+      {!s.block_all && (
+        <Field label={t('Filtro web: bloquear nesse horário as categorias')}>
+          <CategoryPicker value={s.categories ?? []} onChange={(categories) => onChange({ ...s, categories })} />
+        </Field>
+      )}
       <LabeledSwitch checked={!s.disabled} onChange={(v) => onChange({ ...s, disabled: !v })} label={t('Horário ligado')} />
+    </div>
+  )
+}
+
+/** Escolha de categorias do filtro web (chips com ícone). */
+function CategoryPicker({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {Object.entries(webCategory).map(([id, c]) => {
+        const on = value.includes(id)
+        const Icon = c.icon
+        return (
+          <button
+            key={id}
+            type="button"
+            aria-pressed={on}
+            title={c.desc}
+            onClick={() => onChange(on ? value.filter((x) => x !== id) : [...value, id])}
+            className={cx(
+              'flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors',
+              on ? 'border-critical/50 bg-critical-soft text-critical-ink' : 'border-line-strong text-ink-2 hover:text-ink',
+            )}
+          >
+            <Icon className="size-3.5" aria-hidden />
+            {c.name}
+          </button>
+        )
+      })}
     </div>
   )
 }

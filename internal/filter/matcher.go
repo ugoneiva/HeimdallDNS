@@ -171,12 +171,18 @@ func (b *Builder) AddThreatList(r io.Reader) (ListStats, error) {
 }
 
 // AddList lê uma lista inteira (formato hosts, Adblock ou domínios).
-func (b *Builder) AddList(r io.Reader) (ListStats, error) {
+func (b *Builder) AddList(r io.Reader) (ListStats, error) { return b.addList(r, false) }
+
+// AddWildcardList lê uma lista em que um domínio simples vale também para os
+// subdomínios (formato do SquidGuard, como as listas da UT1).
+func (b *Builder) AddWildcardList(r io.Reader) (ListStats, error) { return b.addList(r, true) }
+
+func (b *Builder) addList(r io.Reader, wildcardPlain bool) (ListStats, error) {
 	var st ListStats
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 64*1024), 1024*1024)
 	for sc.Scan() {
-		switch b.AddLine(sc.Text(), false) {
+		switch b.AddLine(sc.Text(), wildcardPlain) {
 		case lineRule:
 			st.Rules++
 		case lineBad:

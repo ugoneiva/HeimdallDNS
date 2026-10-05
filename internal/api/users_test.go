@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/cookiejar"
+	"net/http/httptest"
 	"net/netip"
 	"os"
 	"slices"
@@ -21,6 +22,7 @@ import (
 	"github.com/ugoneiva/HeimdallDNS/internal/console"
 	"github.com/ugoneiva/HeimdallDNS/internal/querylog"
 	"github.com/ugoneiva/HeimdallDNS/internal/store"
+	"github.com/ugoneiva/HeimdallDNS/internal/webfilter"
 )
 
 // fresh devolve o mesmo painel com outro navegador (outra sessão).
@@ -438,5 +440,68 @@ func TestTopologyAPI(t *testing.T) {
 	}
 	if ids["youtube"] != 3 || ids["bloqueados"] != 1 {
 		t.Errorf("destinos = %v", ids)
+	}
+}
+
+func TestWebFilterAPI(t *testing.T) {
+	src := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintln(w, "||cassino.test^")
+	}))
+	defer src.Close()
+	old := webfilter.Catalog
+	defer func() { webfilter.Catalog = old }()
+	webfilter.Catalog = []webfilter.Category{
+		{ID: "apostas", Name: "Apostas", Sources: []webfilter.Source{{Name: "teste", URL: src.URL, License: "x"}}},
+		{ID: "redes-sociais", Name: "Redes sociais", Rules: []string{"service:social"}},
+	}
+	wf := webfilter.New(webfilter.Options{CacheDir: t.TempDir()})
+	p := newPanelWith(t, func(d *Deps) {
+		withDNS(t)(d)
+		d.WebFilter = wf
+	})
+	login(t, p)
+	if r, _ := p.do(t, "PUT", "/api/webfilter", `{"global":["nada"]}`); r.StatusCode != 400 {
+		t.Error("categoria inválida")
+	}
+	if r, out := p.do(t, "PUT", "/api/webfilter", `{"global":["apostas"],"safesearch":true}`); r.StatusCode != 200 {
+		t.Fatalf("salvar: %v", out)
+	}
+	// Grupo com categoria de horário e categoria inválida.
+	if r, _ := p.do(t, "PUT", "/api/groups", `{"groups":[{"name":"X","categories":["nada"]}]}`); r.StatusCode != 400 {
+		t.Error("grupo com categoria inválida")
+	}
+	if r, out := p.do(t, "PUT", "/api/groups", `{"groups":[{"name":"Crianças","categories":["redes-sociais"]}]}`); r.StatusCode != 200 {
+		t.Fatalf("grupo: %v", out)
+	}
+	wf.Refresh(t.Context()) // carrega as categorias em uso (global + grupo)
+	c := p.reg.Observe(mustAddr("192.168.0.70"), time.Now())
+	gid := p.reg.Groups()[0].ID
+	p.do(t, "PATCH", "/api/clients/"+c.ID(), `{"group":"`+gid+`"}`)
+
+	check := func(name, client, verdict, cat string) {
+		t.Helper()
+		path := "/api/filter/test?name=" + name
+		if client != "" {
+			path += "&client=" + client
+		}
+		_, out := p.do(t, "GET", path, "")
+		if out["verdict"] != verdict || (cat != "" && out["web_category"] != cat) {
+			t.Errorf("%s (%s) = %v", name, client, out)
+		}
+	}
+	check("www.cassino.test", "", "blocked", "apostas")
+	check("www.instagram.com", "", "allowed", "")
+	check("www.instagram.com", "192.168.0.70", "blocked", "redes-sociais")
+	if _, out := p.do(t, "GET", "/api/filter/test?name=www.google.com", ""); out["safesearch"] != "forcesafesearch.google.com" {
+		t.Errorf("busca segura no teste: %v", out)
+	}
+	_, out := p.do(t, "GET", "/api/webfilter", "")
+	cats := out["categories"].([]any)
+	social := cats[1].(map[string]any)
+	if _, isList := social["sources"].([]any); !isList {
+		t.Error("sources nunca pode ser null (o painel faz .map)")
+	}
+	if social["groups"].([]any)[0] != "Crianças" || cats[0].(map[string]any)["global"] != true {
+		t.Errorf("visão das categorias = %v", cats)
 	}
 }
