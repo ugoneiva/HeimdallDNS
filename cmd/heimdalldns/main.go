@@ -9,6 +9,8 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	cryptotls "crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -32,6 +34,7 @@ import (
 	"github.com/ugoneiva/HeimdallDNS/internal/api"
 	"github.com/ugoneiva/HeimdallDNS/internal/backup"
 	"github.com/ugoneiva/HeimdallDNS/internal/cache"
+	"github.com/ugoneiva/HeimdallDNS/internal/certs"
 	"github.com/ugoneiva/HeimdallDNS/internal/clients"
 	"github.com/ugoneiva/HeimdallDNS/internal/config"
 	"github.com/ugoneiva/HeimdallDNS/internal/console"
@@ -192,6 +195,23 @@ func runServer() error {
 		log.Warn("notificações do painel inválidas; seguindo sem elas", "erro", err)
 	}
 	go nt.Run(ctx)
+	acmeOpts, err := acmeFromEnv()
+	if err != nil {
+		return err
+	}
+	cm := certs.New(certs.Options{Dir: filepath.Join(cfg.DataDir, "certs"), Logger: log.With("componente", "certificado"),
+		DirectoryURL: acmeOpts.DirectoryURL, HTTPClient: acmeOpts.HTTPClient, HTTPAddr: acmeOpts.HTTPAddr,
+		OnEvent: func(ok bool, title, detail string) {
+			sev := notify.SevHigh
+			if ok {
+				sev = notify.SevLow
+			}
+			nt.Send(notify.Event{Type: notify.EventSystem, Severity: sev, Title: title, Text: detail, Key: "cert|" + title})
+		}})
+	if err := api.LoadCerts(db, cm); err != nil {
+		log.Warn("configuração do certificado inválida; seguindo sem ela", "erro", err)
+	}
+	go cm.Run(ctx)
 	backupDir := cfg.Backup.Dir
 	if backupDir == "" {
 		backupDir = filepath.Join(cfg.DataDir, "backups")
@@ -404,6 +424,11 @@ func runServer() error {
 	if err != nil {
 		return err
 	}
+	// O certificado emitido pelo painel (Let's Encrypt) vale no DoT/DoH sem
+	// reiniciar; o ACME do arquivo (dns.acme) cuida de si mesmo.
+	if !cfg.DNS.ACME && (tlsCfg != nil || cm.ForDNS()) {
+		tlsCfg = cm.Wrap(tlsCfg, cm.ForDNS)
+	}
 
 	allowed, _ := cfg.AllowedPrefixes()
 	local, _ := cfg.LocalAddrs()
@@ -494,13 +519,25 @@ func runServer() error {
 		if err != nil {
 			return fmt.Errorf("api %s: %w", cfg.API.Listen, err)
 		}
-		tls := cfg.API.TLSCert != ""
+		// HTTPS do painel: o certificado emitido aqui (se ligado para o painel)
+		// e, por baixo, o do arquivo ou o autoassinado.
+		var panelTLS *cryptotls.Config
+		if cfg.API.TLSCert != "" {
+			if panelTLS, err = tlsconf.New(tlsconf.Options{CertFile: cfg.API.TLSCert, KeyFile: cfg.API.TLSKey}); err != nil {
+				return fmt.Errorf("certificado do painel: %w", err)
+			}
+		}
+		if panelTLS != nil || cm.ForPanel() {
+			panelTLS = cm.Wrap(panelTLS, cm.ForPanel)
+		}
+		tls := panelTLS != nil
 		httpSrv = &http.Server{
 			Handler: api.New(api.Deps{
 				Context: ctx, Token: token, Version: version, Started: started,
 				Server: srv, Cache: dnsCache, Upstream: ups, Filter: flt, Clients: reg,
 				Store: db, Log: qlog, Security: sec, NRD: nrdCheck, UI: webui.FS(), Secure: tls, DHCP: dhcpSrv,
-				HA: haDeps, AD: adClient, Audit: auditExp, WebFilter: wf, Forward: fwd, Notify: nt, Reports: reports,
+				HA: haDeps, AD: adClient, Audit: auditExp, WebFilter: wf, Forward: fwd, Notify: nt, Reports: reports, Certs: cm,
+				DNSTLS: len(cfg.DNS.DoTListen) > 0 || cfg.DNS.DoHListen != "",
 				ADLogin: api.ADLogin{Enabled: cfg.AD.Login.Enabled, AdminGroups: cfg.AD.Login.AdminGroups,
 					OperatorGroups: cfg.AD.Login.OperatorGroups, ViewerGroups: cfg.AD.Login.ViewerGroups, RequireMFA: cfg.AD.Login.RequireMFA},
 				Encrypted: api.Encrypted{
@@ -518,7 +555,8 @@ func runServer() error {
 		go func() {
 			var err error
 			if tls {
-				err = httpSrv.ServeTLS(ln, cfg.API.TLSCert, cfg.API.TLSKey)
+				httpSrv.TLSConfig = panelTLS
+				err = httpSrv.ServeTLS(ln, "", "")
 			} else {
 				err = httpSrv.Serve(ln)
 			}
@@ -1052,4 +1090,29 @@ func keepUsedRecovery(primary, local []string) []string {
 		return primary
 	}
 	return common
+}
+
+// acmeFromEnv permite outra CA ACME no lugar do Let's Encrypt (CA interna
+// como o step-ca, ou o Pebble nos testes):
+//
+//	HEIMDALL_ACME_DIRECTORY  endereço do diretório ACME
+//	HEIMDALL_ACME_CA         PEM da CA que assina o HTTPS desse diretório
+//	HEIMDALL_ACME_HTTP_ADDR  onde atender o desafio HTTP-01 (padrão :80)
+func acmeFromEnv() (certs.Options, error) {
+	o := certs.Options{DirectoryURL: os.Getenv("HEIMDALL_ACME_DIRECTORY"), HTTPAddr: os.Getenv("HEIMDALL_ACME_HTTP_ADDR")}
+	if ca := os.Getenv("HEIMDALL_ACME_CA"); ca != "" {
+		b, err := os.ReadFile(ca)
+		if err != nil {
+			return o, fmt.Errorf("HEIMDALL_ACME_CA: %w", err)
+		}
+		pool, _ := x509.SystemCertPool()
+		if pool == nil {
+			pool = x509.NewCertPool()
+		}
+		if !pool.AppendCertsFromPEM(b) {
+			return o, errors.New("HEIMDALL_ACME_CA: nenhum certificado no arquivo")
+		}
+		o.HTTPClient = &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{TLSClientConfig: &cryptotls.Config{RootCAs: pool}}}
+	}
+	return o, nil
 }

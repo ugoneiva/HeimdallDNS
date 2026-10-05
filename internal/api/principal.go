@@ -108,7 +108,7 @@ func (a *api) authenticate(r *http.Request) *principal {
 
 // Rotas que só o administrador acessa, até para leitura.
 var adminOnly = []string{"/api/users", "/api/tokens", "/api/backup", "/api/backups", "/api/restore", "/api/restart",
-	"/api/audit", "/api/import/", "/api/wizard/", "/api/console/", "/api/notify"}
+	"/api/audit", "/api/import/", "/api/wizard/", "/api/console/", "/api/notify", "/api/certs"}
 
 // Alterações liberadas ao operador: operar aparelhos, alertas e reservas.
 var operatorWrites = []string{"/api/clients/", "/api/security/events/", "/api/security/ignore", "/api/rules/quick",

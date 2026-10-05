@@ -21,6 +21,7 @@ import (
 
 	"github.com/ugoneiva/HeimdallDNS/internal/ad"
 	"github.com/ugoneiva/HeimdallDNS/internal/cache"
+	"github.com/ugoneiva/HeimdallDNS/internal/certs"
 	"github.com/ugoneiva/HeimdallDNS/internal/clients"
 	"github.com/ugoneiva/HeimdallDNS/internal/console"
 	"github.com/ugoneiva/HeimdallDNS/internal/dhcp"
@@ -60,6 +61,8 @@ type Deps struct {
 	Forward   *forward.Manager   // encaminhamento condicional (nil = indisponível)
 	Notify    *notify.Manager    // notificações (Telegram, Teams, e-mail, webhook)
 	Reports   *report.Scheduler  // relatório periódico em PDF
+	Certs     *certs.Manager     // certificado HTTPS pelo Let's Encrypt
+	DNSTLS    bool               // DoT ou DoH configurados
 	Audit     AuditExporter      // operações administrativas para o SIEM (opcional)
 	Encrypted Encrypted
 	// Backup e restauração (DataDir vazio = sem as rotas).
@@ -140,6 +143,7 @@ func build(d Deps) (*api, http.Handler) {
 	a.forwardRoutes(api)
 	a.notifyRoutes(api)
 	a.reportRoutes(api)
+	a.certRoutes(api)
 	a.userRoutes(api)
 	api.HandleFunc("POST /api/wizard/done", a.wizardDone)
 	api.HandleFunc("GET /api/groups", a.listGroups)

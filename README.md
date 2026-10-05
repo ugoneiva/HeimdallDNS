@@ -250,6 +250,24 @@ Pega aparelho infectado ou em loop sem afetar os outros. O loopback nunca é lim
 - **`upstream.require_dnssec: true`:** usa só os upstreams que validam. Se nenhum validar, usa todos e avisa no log.
 
 Cloudflare, Quad9 e Google validam.
+### Certificado HTTPS (Let's Encrypt)
+
+Em **Certificado HTTPS** (só administrador), para instalações oficiais com domínio público:
+
+1. Preencha o domínio (ex.: `heimdall.empresa.com.br`; dá para pôr mais de um) e, se quiser, um e-mail.
+2. Escolha como provar que o domínio é seu:
+   - **HTTP (porta 80):** o domínio aponta para o IP público do servidor, e a porta 80 chega até ele. O HeimdallDNS abre a porta só durante a emissão.
+   - **DNS (Cloudflare):** um token da API com permissão *Zone → DNS → Edit*. Serve para servidor sem porta aberta para a internet e para curinga (`*.empresa.com.br`). O registro TXT do desafio é apagado no fim.
+3. Clique em **Emitir e ativar**. A tela mostra cada passo e, se falhar, o motivo em português (DNS público, firewall, token).
+
+O certificado fica em `<data_dir>/certs` (`fullchain.pem` e `privkey.pem`, a chave só legível pelo serviço) e passa a valer no **painel** e no **DoT/DoH** (cada um pode ser desligado). Se o painel estava em HTTP, a tela oferece reiniciar o serviço para abrir a porta já em HTTPS. Depois disso, renovações trocam o certificado sem reiniciar.
+
+**Renovação automática** (ligada por padrão, pode ser desligada): roda dentro do próprio serviço, sem cron, quando falta um terço da validade (30 dias nos certificados de 90). Sucesso e falha viram notificação. Desligada, o HeimdallDNS só avisa pelas notificações e a renovação é feita pelo botão. **Desativar** volta ao certificado do arquivo (ou ao autoassinado); os arquivos emitidos ficam guardados.
+
+Para conferir a configuração sem gastar o limite de emissões do Let's Encrypt, ligue **Ambiente de teste (staging)**: o certificado sai, mas os navegadores não confiam nele.
+
+Outra CA ACME (uma CA interna como o step-ca) pode substituir o Let's Encrypt pelas variáveis de ambiente `HEIMDALL_ACME_DIRECTORY`, `HEIMDALL_ACME_CA` (PEM da CA do diretório) e `HEIMDALL_ACME_HTTP_ADDR`. O CI emite de verdade num servidor ACME de teste (Pebble), pelas duas validações, a cada mudança.
+
 ### Notificações
 
 Em **Notificações** (administrador), o HeimdallDNS avisa fora do painel:
@@ -418,6 +436,7 @@ heimdalldns restore copia.tar.gz.age -restart         # restaura e reinicia
 | `GET/POST /api/tokens` · `DELETE /api/tokens/{id}` | tokens de API (`name`, `role`, `expires_days`); o token só volta na criação |
 | `GET /api/audit` | auditoria: alterações, logins e tentativas barradas (`range`, `limit`) |
 | `GET/PUT /api/notify` · `POST /api/notify/test/{id}` | canais de notificação, SMTP e últimos envios (administrador) |
+| `GET/PUT /api/certs` · `POST /api/certs/issue` · `POST /api/certs/disable` | certificado HTTPS pelo Let's Encrypt: configuração, emissão/renovação e desativação (administrador) |
 | `GET /api/reports` · `PUT /api/reports/settings` · `POST /api/reports/send` | relatórios guardados, agendamento e envio imediato |
 | `GET /api/reports/generate?days=7` · `GET /api/reports/file/{nome}` | gera e baixa o PDF; baixa um guardado |
 | `GET/DELETE /api/auth/sessions` · `DELETE /api/auth/sessions/{id}` | sessões da própria conta; sem `id` encerra todas as outras |

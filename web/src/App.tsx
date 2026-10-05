@@ -3,7 +3,7 @@
 
 import { useEffect, useState, type ComponentType } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { BellRing, BookUser, ShieldHalf, Gauge, Globe, Waypoints, ListFilter, Network, Radar as RadarIcon, ScrollText, Settings as SettingsIcon } from 'lucide-react'
+import { BellRing, BookUser, LockKeyhole, ShieldHalf, Gauge, Globe, Waypoints, ListFilter, Network, Radar as RadarIcon, ScrollText, Settings as SettingsIcon } from 'lucide-react'
 import { api, authEvents } from './api'
 import type { AuthState } from './types'
 import { cx } from './components/ui'
@@ -27,12 +27,13 @@ import { Wizard } from './pages/Wizard'
 import { NetworkMap } from './pages/NetworkMap'
 import { WebFilter } from './pages/WebFilter'
 import { Notifications } from './pages/Notifications'
+import { Certificate } from './pages/Certificate'
 import { MFACard } from './pages/Settings'
 import { PasskeysCard } from './pages/Account'
 import { roleLabel, useAuth, useCan } from './lib/auth'
 import { t } from './lib/i18n'
 
-type Page = 'overview' | 'devices' | 'map' | 'webfilter' | 'security' | 'queries' | 'lists' | 'dns' | 'dhcp' | 'ad' | 'notify' | 'settings'
+type Page = 'overview' | 'devices' | 'map' | 'webfilter' | 'security' | 'queries' | 'lists' | 'dns' | 'dhcp' | 'ad' | 'notify' | 'cert' | 'settings'
 
 const nav: { page: Page; path: string; label: string; icon: ComponentType<{ className?: string }> }[] = [
   { page: 'overview', path: '', label: t('Visão geral'), icon: Gauge },
@@ -46,6 +47,7 @@ const nav: { page: Page; path: string; label: string; icon: ComponentType<{ clas
   { page: 'dhcp', path: 'dhcp', label: t('DHCP'), icon: Network },
   { page: 'ad', path: 'ad', label: t('Active Directory'), icon: BookUser },
   { page: 'notify', path: 'notificacoes', label: t('Notificações'), icon: BellRing },
+  { page: 'cert', path: 'certificado', label: t('Certificado HTTPS'), icon: LockKeyhole },
   { page: 'settings', path: 'configuracoes', label: t('Configurações'), icon: SettingsIcon },
 ]
 
@@ -128,7 +130,7 @@ function Shell({ version, onLogout }: { version: string; onLogout: () => void })
   const dhcpOn = useDHCP().data?.enabled ?? false
   const adOn = !!useADInfo().data
   const isAdmin = useCan('admin')
-  const items = nav.filter((n) => (n.page !== 'dhcp' || dhcpOn) && (n.page !== 'ad' || adOn) && (n.page !== 'notify' || isAdmin))
+  const items = nav.filter((n) => (n.page !== 'dhcp' || dhcpOn) && (n.page !== 'ad' || adOn) && ((n.page !== 'notify' && n.page !== 'cert') || isAdmin))
 
   return (
     <div className="min-h-full lg:grid lg:grid-cols-[232px_1fr]">
@@ -193,6 +195,7 @@ function Shell({ version, onLogout }: { version: string; onLogout: () => void })
           {page === 'dhcp' && <DHCP onOpenDevice={(id) => go('devices', id)} />}
           {page === 'ad' && <ActiveDirectory />}
           {page === 'notify' && <Notifications />}
+          {page === 'cert' && <Certificate />}
           {page === 'settings' && <Settings onLogout={onLogout} />}
           </ErrorBoundary>
         </div>
@@ -254,6 +257,7 @@ const subtitles: Partial<Record<Page, string>> = {
   dhcp: t('Endereços entregues aos aparelhos'),
   ad: t('Usuários, grupos e DNS do domínio'),
   notify: t('Telegram, Teams, e-mail e webhook'),
+  cert: t('Let\'s Encrypt para o painel e o DNS criptografado'),
   settings: t('Contas, backup e preferências'),
 }
 

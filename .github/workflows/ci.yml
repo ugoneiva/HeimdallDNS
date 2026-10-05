@@ -17,6 +17,12 @@ jobs:
           go-version-file: go.mod
       - run: go vet ./...
       - run: go test -race ./...
+      - name: Emissão de certificado num servidor ACME de teste (Pebble)
+        run: |
+          go install github.com/letsencrypt/pebble/v2/cmd/pebble@v2.10.1
+          HEIMDALL_PEBBLE_BIN=$(go env GOPATH)/bin/pebble \
+          HEIMDALL_PEBBLE_ROOT=$(go env GOMODCACHE)/github.com/letsencrypt/pebble/v2@v2.10.1 \
+          go test -race -count=1 -run TestPebble -v ./internal/certs
       - name: Vulnerabilidades conhecidas
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
