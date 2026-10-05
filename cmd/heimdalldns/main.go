@@ -38,6 +38,7 @@ import (
 	"github.com/ugoneiva/HeimdallDNS/internal/dhcp"
 	"github.com/ugoneiva/HeimdallDNS/internal/export"
 	"github.com/ugoneiva/HeimdallDNS/internal/filter"
+	"github.com/ugoneiva/HeimdallDNS/internal/forward"
 	"github.com/ugoneiva/HeimdallDNS/internal/ha"
 	"github.com/ugoneiva/HeimdallDNS/internal/nrd"
 	"github.com/ugoneiva/HeimdallDNS/internal/querylog"
@@ -212,6 +213,19 @@ func runServer() error {
 	}
 	go ups.HealthCheck(ctx, cfg.Upstream.HealthInterval)
 
+	fwRules := make([]forward.Rule, len(cfg.DNS.Conditional))
+	for i, c := range cfg.DNS.Conditional {
+		fwRules[i] = forward.Rule{Domain: c.Domain, Network: c.Network, Servers: c.Servers, Comment: c.Comment}
+	}
+	fwd, err := forward.NewManager(fwRules, cfg.Upstream.Timeout, log.With("componente", "encaminhamento"))
+	if err != nil {
+		return err
+	}
+	defer fwd.Close()
+	if err := api.LoadForward(db, fwd); err != nil {
+		log.Warn("encaminhamento condicional do painel inválido; usando só o do arquivo", "erro", err)
+	}
+
 	lists := make([]filter.ListSpec, len(cfg.Filter.Lists))
 	for i, l := range cfg.Filter.Lists {
 		lists[i] = filter.ListSpec{Name: l.Name, URL: l.URL, Enabled: l.IsEnabled(), Category: l.Category}
@@ -358,6 +372,7 @@ func runServer() error {
 		MaxTTL:     cfg.Cache.MaxTTL,
 		ServeStale: cfg.Cache.ServeStale,
 	})
+	fwd.OnChange = dnsCache.Flush
 	srv := server.New(server.Options{
 		Listen:       cfg.DNS.Listen,
 		Allowed:      allowed,
@@ -370,17 +385,22 @@ func runServer() error {
 		Clients:      reg,
 		NRD:          nrdCheck,
 		WebFilter:    wf,
-		LocalLookup:  dhcpLookup(dhcpSrv),
-		LocalPTR:     dhcpPTR(dhcpSrv),
-		TLS:          tlsCfg,
-		PublicHost:   cfg.DNS.PublicHost,
-		DoTListen:    cfg.DNS.DoTListen,
-		DoHListen:    cfg.DNS.DoHListen,
-		DoHPlain:     cfg.DNS.DoHPlainHTTP,
-		Timeout:      cfg.Upstream.Timeout + time.Second,
-		Logger:       log.With("componente", "dns"),
-		OnQuery:      onQuery(qlog, det, exp, log, cfg.Log.Queries),
-		RateLimit:    rateLimit(cfg),
+		Forward:      fwd,
+		PrivateUpstream: func() bool {
+			servers, _ := ups.Config()
+			return forward.HasPrivate(servers)
+		},
+		LocalLookup: dhcpLookup(dhcpSrv),
+		LocalPTR:    dhcpPTR(dhcpSrv),
+		TLS:         tlsCfg,
+		PublicHost:  cfg.DNS.PublicHost,
+		DoTListen:   cfg.DNS.DoTListen,
+		DoHListen:   cfg.DNS.DoHListen,
+		DoHPlain:    cfg.DNS.DoHPlainHTTP,
+		Timeout:     cfg.Upstream.Timeout + time.Second,
+		Logger:      log.With("componente", "dns"),
+		OnQuery:     onQuery(qlog, det, exp, log, cfg.Log.Queries),
+		RateLimit:   rateLimit(cfg),
 		OnRateLimit: func(ip netip.Addr, id string, dropped uint64) {
 			sec.Raise(security.Alert{
 				Kind: security.KindFlood, Severity: security.SevMedium, ClientID: id, ClientIP: ip.String(),
@@ -405,7 +425,7 @@ func runServer() error {
 		return err
 	}
 
-	haDeps, err := newHA(ctx, cfg, db, flt, sec, reg, srv, ups, wf, local, log.With("componente", "ha"))
+	haDeps, err := newHA(ctx, cfg, db, flt, sec, reg, srv, ups, wf, fwd, local, log.With("componente", "ha"))
 	if err != nil {
 		return err
 	}
@@ -439,7 +459,7 @@ func runServer() error {
 				Context: ctx, Token: token, Version: version, Started: started,
 				Server: srv, Cache: dnsCache, Upstream: ups, Filter: flt, Clients: reg,
 				Store: db, Log: qlog, Security: sec, NRD: nrdCheck, UI: webui.FS(), Secure: tls, DHCP: dhcpSrv,
-				HA: haDeps, AD: adClient, Audit: auditExp, WebFilter: wf,
+				HA: haDeps, AD: adClient, Audit: auditExp, WebFilter: wf, Forward: fwd,
 				ADLogin: api.ADLogin{Enabled: cfg.AD.Login.Enabled, AdminGroups: cfg.AD.Login.AdminGroups,
 					OperatorGroups: cfg.AD.Login.OperatorGroups, ViewerGroups: cfg.AD.Login.ViewerGroups, RequireMFA: cfg.AD.Login.RequireMFA},
 				Encrypted: api.Encrypted{
@@ -653,7 +673,7 @@ func newAD(ctx context.Context, cfg *config.Config, log *slog.Logger) (*ad.Clien
 // newHA liga a alta disponibilidade: o principal publica o snapshot; a
 // réplica o puxa e aplica (listas, regras, segurança, dispositivos, senha).
 func newHA(ctx context.Context, cfg *config.Config, db *store.Store, flt *filter.Manager, sec *security.Manager,
-	reg *clients.Registry, srv *server.Server, ups *upstream.Group, wf *webfilter.Manager, localCfg map[string][]netip.Addr, log *slog.Logger) (api.HA, error) {
+	reg *clients.Registry, srv *server.Server, ups *upstream.Group, wf *webfilter.Manager, fwd *forward.Manager, localCfg map[string][]netip.Addr, log *slog.Logger) (api.HA, error) {
 	h := api.HA{Role: cfg.HA.Role}
 	switch cfg.HA.Role {
 	case ha.RolePrimary:
@@ -678,6 +698,9 @@ func newHA(ctx context.Context, cfg *config.Config, db *store.Store, flt *filter
 			if _, err = db.GetJSON(api.GroupsKey, &snap.Groups); err != nil {
 				return snap, err
 			}
+			if _, err = db.GetJSON(api.ForwardKey, &snap.Forward); err != nil {
+				return snap, err
+			}
 			snap.WebFilter = wf.Settings()
 			if snap.Users, err = db.Users(); err != nil {
 				return snap, err
@@ -698,7 +721,7 @@ func newHA(ctx context.Context, cfg *config.Config, db *store.Store, flt *filter
 		}, log)
 		log.Info("nó principal: réplicas sincronizam em /api/sync/snapshot")
 	case ha.RoleReplica:
-		var lastLists, lastRules, lastLocal, lastUps, lastUsers, lastTokens, lastGroups, lastWeb string
+		var lastLists, lastRules, lastLocal, lastUps, lastUsers, lastTokens, lastGroups, lastWeb, lastFwd string
 		r, err := ha.NewReplica(ha.ReplicaOptions{
 			PrimaryURL: cfg.HA.PrimaryURL, Token: cfg.HA.SyncToken, InsecureTLS: cfg.HA.InsecureTLS, Logger: log,
 			Apply: func(s ha.Snapshot) error {
@@ -745,6 +768,15 @@ func newHA(ctx context.Context, cfg *config.Config, db *store.Store, flt *filter
 						return err
 					}
 					lastUps = string(b)
+				}
+				if b, _ := json.Marshal(s.Forward); string(b) != lastFwd {
+					if err := db.SetJSON(api.ForwardKey, s.Forward); err != nil {
+						return err
+					}
+					if err := fwd.Apply(s.Forward); err != nil {
+						return err
+					}
+					lastFwd = string(b)
 				}
 				if b, _ := json.Marshal(s.Groups); string(b) != lastGroups {
 					if err := db.SetJSON(api.GroupsKey, s.Groups); err != nil {

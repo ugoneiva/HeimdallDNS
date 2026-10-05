@@ -24,6 +24,8 @@ import (
 	"github.com/ugoneiva/HeimdallDNS/internal/clients"
 	"github.com/ugoneiva/HeimdallDNS/internal/config"
 	"github.com/ugoneiva/HeimdallDNS/internal/filter"
+	"github.com/ugoneiva/HeimdallDNS/internal/forward"
+	"github.com/ugoneiva/HeimdallDNS/internal/upstream"
 )
 
 // Status de uma consulta, para o log ao vivo e as estatísticas.
@@ -97,6 +99,13 @@ type Options struct {
 	Clients      *clients.Registry // nil = sem radar
 	NRD          NRDBlocker        // nil = sem bloqueio de recém-registrados
 	WebFilter    WebFilter         // nil = sem filtro web
+	// Encaminhamento condicional (domínios e redes internas para o DNS do AD
+	// ou do roteador). nil = tudo vai para o Upstream.
+	Forward *forward.Manager
+	// PrivateUpstream diz se algum upstream é um IP privado; se nenhum for, a
+	// consulta reversa de IP privado sem regra é respondida aqui (NXDOMAIN)
+	// em vez de vazar para a internet.
+	PrivateUpstream func() bool
 	// Nomes dinâmicos (concessões DHCP): <nome>.<domínio> e o reverso.
 	LocalLookup func(name string) []netip.Addr
 	LocalPTR    func(ip netip.Addr) string
@@ -420,6 +429,15 @@ func (s *Server) handle(r *dns.Msg, ev *Event, pol *clients.Policy, trusted, lim
 		}
 	}
 
+	if q.Qtype == dns.TypePTR && forward.IsPrivateReverse(ev.Name) && (s.opts.PrivateUpstream == nil || !s.opts.PrivateUpstream()) {
+		if _, _, ok := s.opts.Forward.Match(ev.Name); !ok {
+			ev.Status, ev.Rule = StatusLocal, "reverso de IP privado"
+			m := reply(r, dns.RcodeNameError)
+			m.Authoritative = true
+			return m
+		}
+	}
+
 	do := false
 	if opt := r.IsEdns0(); opt != nil {
 		do = opt.Do()
@@ -445,6 +463,17 @@ func (s *Server) handle(r *dns.Msg, ev *Event, pol *clients.Policy, trusted, lim
 	return m.Copy()
 }
 
+// forwarded marca o upstream de uma regra de encaminhamento no histórico.
+type forwarded struct {
+	g     *upstream.Group
+	label string
+}
+
+func (f forwarded) Exchange(ctx context.Context, req *dns.Msg) (*dns.Msg, string, error) {
+	m, addr, err := f.g.Exchange(ctx, req)
+	return m, addr + " (" + f.label + ")", err
+}
+
 type resolved struct {
 	msg  *dns.Msg
 	addr string
@@ -464,7 +493,12 @@ func (s *Server) resolve(key cache.Key, cd bool) (*dns.Msg, string, error) {
 		req.SetEdns0(ednsSize, key.DO)
 		ctx, cancel := context.WithTimeout(context.Background(), s.opts.Timeout)
 		defer cancel()
-		resp, addr, err := s.opts.Upstream.Exchange(ctx, req)
+		var ex Exchanger = s.opts.Upstream
+		if g, label, ok := s.opts.Forward.Match(key.Name); ok {
+			// Nome interno: só os servidores da regra, sem cair para a internet.
+			ex = forwarded{g, label}
+		}
+		resp, addr, err := ex.Exchange(ctx, req)
 		if err != nil {
 			return nil, err
 		}

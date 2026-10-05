@@ -3,9 +3,9 @@
 
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, RotateCcw, Trash } from 'lucide-react'
+import { Network, Plus, RotateCcw, Trash } from 'lucide-react'
 import { api } from '../api'
-import type { LocalRecord, LocalRecords, UpstreamState } from '../types'
+import type { ForwardRule, ForwardState, LocalRecord, LocalRecords, UpstreamState } from '../types'
 import { Button, Card, ErrorNote, Field, Input, Select, StatusBadge, Textarea, cx } from '../components/ui'
 import { t } from '../lib/i18n'
 
@@ -31,6 +31,7 @@ export function DNS() {
   return (
     <div className="space-y-5">
       <UpstreamCard />
+      <ForwardCard />
       <LocalRecordsCard />
     </div>
   )
@@ -246,6 +247,128 @@ function LocalRecordsCard() {
           <p className="py-6 text-center text-sm text-muted">{t('Nenhum registro local.')}</p>
         )}
       </div>
+    </Card>
+  )
+}
+
+/** Encaminhamento condicional: domínios e redes internas para o DNS do AD ou do roteador. */
+function ForwardCard() {
+  const qc = useQueryClient()
+  const q = useQuery({ queryKey: ['dns-forward'], queryFn: () => api<ForwardState>('/api/dns/forward') })
+  const [kind, setKind] = useState<'domain' | 'network'>('domain')
+  const [target, setTarget] = useState('')
+  const [servers, setServers] = useState('')
+  const [comment, setComment] = useState('')
+  const save = useMutation({
+    mutationFn: (rules: ForwardRule[]) => api<ForwardState>('/api/dns/forward', { method: 'PUT', body: { rules } }),
+    onSuccess: (d) => qc.setQueryData(['dns-forward'], d),
+  })
+  const rules = q.data?.rules ?? []
+  const add = () => {
+    const rule: ForwardRule = { [kind]: target.trim(), servers: servers.split(/[\s,;]+/).filter(Boolean), comment: comment.trim() }
+    save.mutate([...rules, rule], {
+      onSuccess: () => {
+        setTarget('')
+        setServers('')
+        setComment('')
+      },
+    })
+  }
+  const row = (r: ForwardRule, origin: 'panel' | 'config', i: number) => (
+    <tr key={`${origin}-${r.domain ?? r.network}`} className="border-b border-line last:border-0">
+      <td className="py-2 pr-3 font-mono text-xs text-ink">{r.domain ?? r.network}</td>
+      <td className="px-3 py-2 text-xs text-ink-2">{r.domain ? t('domínio') : t('rede (reverso)')}</td>
+      <td className="px-3 py-2 font-mono text-xs text-ink-2">{r.servers.join(', ')}</td>
+      <td className="px-3 py-2 text-xs text-ink-2">{r.comment}</td>
+      <td className={cx('px-3 py-2 text-xs', origin === 'config' ? 'text-muted' : 'text-ink-2')}>
+        {origin === 'config' ? t('arquivo') : t('painel')}
+      </td>
+      <td className="py-2 text-right">
+        {origin === 'panel' && (
+          <Button
+            size="sm"
+            variant="ghost"
+            aria-label={t('Apagar {nome}', { nome: r.domain ?? r.network ?? '' })}
+            icon={<Trash className="size-3.5" />}
+            onClick={() => save.mutate(rules.filter((_, j) => j !== i))}
+          />
+        )}
+      </td>
+    </tr>
+  )
+  return (
+    <Card
+      title={
+        <span className="flex items-center gap-2">
+          <Network className="size-4 text-accent" aria-hidden />
+          {t('Encaminhamento condicional')}
+        </span>
+      }
+      subtitle={t('Domínios e redes internas respondidos pelo DNS do AD ou do roteador, nunca pela internet')}
+    >
+      <form
+        className="mb-3 grid gap-2 sm:grid-cols-[130px_1fr_1fr_1fr_auto]"
+        onSubmit={(e) => {
+          e.preventDefault()
+          add()
+        }}
+      >
+        <Select
+          label={t('Tipo')}
+          value={kind}
+          onChange={(v) => setKind(v as 'domain' | 'network')}
+          options={[
+            { value: 'domain', label: t('Domínio') },
+            { value: 'network', label: t('Rede (reverso)') },
+          ]}
+        />
+        <Input
+          value={target}
+          onChange={(e) => setTarget(e.target.value)}
+          placeholder={kind === 'domain' ? t('ex.: empresa.local') : t('ex.: 192.168.1.0/24')}
+          aria-label={kind === 'domain' ? t('Domínio') : t('Rede')}
+          required
+        />
+        <Input
+          value={servers}
+          onChange={(e) => setServers(e.target.value)}
+          placeholder={t('servidores (ex.: 10.0.0.10, 10.0.0.11)')}
+          aria-label={t('Servidores DNS internos')}
+          required
+        />
+        <Input value={comment} onChange={(e) => setComment(e.target.value)} placeholder={t('comentário (opcional)')} aria-label={t('Comentário')} />
+        <Button type="submit" variant="primary" icon={<Plus className="size-4" />} loading={save.isPending}>
+          {t('Adicionar')}
+        </Button>
+      </form>
+      <ErrorNote error={q.error || save.error} />
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[620px] text-sm">
+          <thead className="text-left text-xs text-muted">
+            <tr className="border-b border-line">
+              <th className="py-2 pr-3 font-medium">{t('Domínio ou rede')}</th>
+              <th className="px-3 py-2 font-medium">{t('Tipo')}</th>
+              <th className="px-3 py-2 font-medium">{t('Servidores')}</th>
+              <th className="px-3 py-2 font-medium">{t('Comentário')}</th>
+              <th className="px-3 py-2 font-medium">{t('Origem')}</th>
+              <th className="w-12" />
+            </tr>
+          </thead>
+          <tbody>
+            {rules.map((r, i) => row(r, 'panel', i))}
+            {q.data?.config.map((r, i) => row(r, 'config', i))}
+          </tbody>
+        </table>
+        {q.data && rules.length + q.data.config.length === 0 && (
+          <p className="py-6 text-center text-sm text-muted">{t('Nenhuma regra: tudo vai para os upstreams acima.')}</p>
+        )}
+      </div>
+      <p className="mt-3 text-[11px] text-muted">
+        {t('Os servidores são tentados na ordem; se nenhum responder, a consulta falha em vez de ir para a internet. Uma rede gera a zona reversa (in-addr.arpa), para os nomes aparecerem no lugar dos IPs.')}{' '}
+        {q.data?.private_reverse === 'local'
+          ? t('Reverso de IP privado sem regra é respondido aqui (não existe), sem vazar a rede interna.')
+          : t('Reverso de IP privado sem regra vai para o upstream privado (ex.: o roteador).')}
+      </p>
     </Card>
   )
 }

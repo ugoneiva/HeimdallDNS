@@ -364,6 +364,8 @@ export type AuditEntry = {
 
 export type LocalRecord = { name: string; type: 'A' | 'AAAA' | 'CNAME'; value: string }
 export type LocalRecords = { config: LocalRecord[]; records: LocalRecord[] }
+export type ForwardRule = { domain?: string; network?: string; servers: string[]; comment?: string }
+export type ForwardState = { rules: ForwardRule[]; config: ForwardRule[]; private_reverse: 'local' | 'upstream' }
 export type UpstreamState = {
   servers: string[]
   mode: string

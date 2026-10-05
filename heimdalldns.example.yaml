@@ -28,6 +28,17 @@ dns:
     burst: 1000             # rajada aceita (ex.: aparelho ligando)
     exempt: []              # ex.: ["192.168.0.1/32"]
 
+  # Encaminhamento condicional: o domínio do AD e a zona reversa da rede vão
+  # para o DNS interno (tentados na ordem; se nenhum responder, a consulta
+  # falha, sem ir para a internet). Também editável no painel (DNS).
+  # Reverso de IP privado sem regra é respondido aqui (NXDOMAIN), a não ser
+  # que algum upstream seja um IP privado (ex.: o roteador).
+  conditional: []
+  #  - domain: empresa.local
+  #    servers: ["10.0.0.10", "10.0.0.11"]
+  #  - network: 10.0.0.0/16
+  #    servers: ["10.0.0.10"]
+
 upstream:
   # DNS comum (1.1.1.1:53), DoH (https://), DoT (tls://), DoQ (quic://) ou DNSCrypt (sdns://).
   servers:

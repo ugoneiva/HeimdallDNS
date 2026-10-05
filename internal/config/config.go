@@ -68,6 +68,20 @@ type DNS struct {
 	ACMEEmail    string   `yaml:"acme_email"`
 
 	RateLimit RateLimit `yaml:"rate_limit"`
+
+	// Encaminhamento condicional: domínios e redes internas respondidos pelo
+	// DNS do AD ou do roteador (também editável no painel).
+	Conditional []Conditional `yaml:"conditional"`
+}
+
+// Conditional manda um domínio (empresa.local) ou a zona reversa de uma rede
+// (192.168.1.0/24) para servidores DNS internos. Os servidores são tentados
+// na ordem; se nenhum responder, a consulta falha (não vai para a internet).
+type Conditional struct {
+	Domain  string   `yaml:"domain"`
+	Network string   `yaml:"network"`
+	Servers []string `yaml:"servers"`
+	Comment string   `yaml:"comment"`
 }
 
 // RateLimit limita as consultas por cliente (IP). O loopback nunca é limitado.

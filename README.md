@@ -19,6 +19,11 @@ Servidor DNS com filtro de bloqueio, no estilo do Pi-hole, escrito em Go, com fu
   - atualização periódica ou por `SIGHUP`;
   - troca das regras sem travar as consultas.
 - **Regras próprias** (`deny` / `allow`) e **registros locais** (A/AAAA).
+- **Encaminhamento condicional:** um domínio interno (`empresa.local`) ou a zona reversa de uma rede (`10.0.0.0/16`) vai para o DNS do AD ou do roteador.
+  - Os servidores são tentados na ordem. Se nenhum responder, a consulta falha: o nome interno nunca vai para a internet.
+  - A regra mais específica vence (`filial.empresa.local` antes de `empresa.local`).
+  - Reverso de IP privado sem regra é respondido na hora (NXDOMAIN), a não ser que algum upstream seja um IP privado.
+  - Configurável em `dns.conditional` ou no painel (DNS), e replicado na alta disponibilidade.
 - **Modos de bloqueio:** `null` (0.0.0.0 / ::), `nxdomain`, `refused` e `drop`. As respostas bloqueadas levam o Extended DNS Error 15 (*Blocked*, RFC 8914).
 
 ### Radar de dispositivos

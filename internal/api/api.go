@@ -25,6 +25,7 @@ import (
 	"github.com/ugoneiva/HeimdallDNS/internal/console"
 	"github.com/ugoneiva/HeimdallDNS/internal/dhcp"
 	"github.com/ugoneiva/HeimdallDNS/internal/filter"
+	"github.com/ugoneiva/HeimdallDNS/internal/forward"
 	"github.com/ugoneiva/HeimdallDNS/internal/querylog"
 	"github.com/ugoneiva/HeimdallDNS/internal/security"
 	"github.com/ugoneiva/HeimdallDNS/internal/server"
@@ -54,6 +55,7 @@ type Deps struct {
 	AD        *ad.Client         // nil = sem integração com o Active Directory
 	ADLogin   ADLogin            // entrada no painel com as contas do AD
 	WebFilter *webfilter.Manager // nil = sem filtro web
+	Forward   *forward.Manager   // encaminhamento condicional (nil = indisponível)
 	Audit     AuditExporter      // operações administrativas para o SIEM (opcional)
 	Encrypted Encrypted
 	// Backup e restauração (DataDir vazio = sem as rotas).
@@ -129,6 +131,7 @@ func build(d Deps) (*api, http.Handler) {
 		a.adRoutes(api)
 	}
 	a.localRoutes(api)
+	a.forwardRoutes(api)
 	a.userRoutes(api)
 	api.HandleFunc("POST /api/wizard/done", a.wizardDone)
 	api.HandleFunc("GET /api/groups", a.listGroups)

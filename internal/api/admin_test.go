@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/ugoneiva/HeimdallDNS/internal/cache"
+	"github.com/ugoneiva/HeimdallDNS/internal/forward"
 	"github.com/ugoneiva/HeimdallDNS/internal/server"
 	"github.com/ugoneiva/HeimdallDNS/internal/upstream"
 )
@@ -214,5 +215,47 @@ func TestBackupAPI(t *testing.T) {
 	}
 	if r, _ := p.do(t, "GET", "/api/backups/..%2Fheimdall.db", ""); r.StatusCode != 400 {
 		t.Error("nome com caminho deveria ser recusado")
+	}
+}
+
+func TestConditionalForwardAPI(t *testing.T) {
+	dnsDeps := withDNS(t)
+	p := newPanelWith(t, func(d *Deps) {
+		dnsDeps(d)
+		fw, err := forward.NewManager([]forward.Rule{{Domain: "arquivo.local", Servers: []string{"10.0.0.1"}}}, time.Second, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(fw.Close)
+		d.Forward = fw
+	})
+	login(t, p)
+	_, out := p.do(t, "GET", "/api/dns/forward", "")
+	if len(out["rules"].([]any)) != 0 || len(out["config"].([]any)) != 1 || out["private_reverse"] != "upstream" { // o upstream de teste é 127.0.0.1
+		t.Fatalf("inicial = %v", out)
+	}
+	body := `{"rules":[{"domain":"Empresa.Local","servers":["10.0.0.10"," 10.0.0.11:53 "],"comment":"AD"},{"network":"192.168.1.7/24","servers":["192.168.1.1"]}]}`
+	r, out := p.do(t, "PUT", "/api/dns/forward", body)
+	if r.StatusCode != 200 {
+		t.Fatalf("salvar: %v", out)
+	}
+	rules := out["rules"].([]any)
+	if len(rules) != 2 || rules[0].(map[string]any)["domain"] != "empresa.local" || rules[1].(map[string]any)["network"] != "192.168.1.0/24" {
+		t.Errorf("normalizadas = %v", rules)
+	}
+	if _, l, ok := p.api.Forward.Match("dc.empresa.local."); !ok || l != "empresa.local" {
+		t.Error("regra não aplicada")
+	}
+	for _, bad := range []string{
+		`{"rules":[{"domain":"a.local","servers":[]}]}`,
+		`{"rules":[{"domain":"a.local","servers":["dc01.a.local"]}]}`,
+		`{"rules":[{"network":"10.0.0.0/4","servers":["10.0.0.1"]}]}`,
+	} {
+		if r, _ := p.do(t, "PUT", "/api/dns/forward", bad); r.StatusCode != 400 {
+			t.Errorf("deveria recusar %s", bad)
+		}
+	}
+	if _, _, ok := p.api.Forward.Match("dc.empresa.local."); !ok {
+		t.Error("regra inválida não pode derrubar as que valem")
 	}
 }
