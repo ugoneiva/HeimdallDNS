@@ -18,6 +18,7 @@ import { AuditTab } from './ActiveDirectory'
 import { roleLabel, useAuth, useCan } from '../lib/auth'
 import { LangPicker } from '../components/LangPicker'
 import { AboutLine } from '../components/About'
+import { PasskeysCard, RecoveryCodes, RecoveryStatus, SessionsCard } from './Account'
 import { t } from '../lib/i18n'
 
 export function Settings({ onLogout }: { onLogout: () => void }) {
@@ -104,6 +105,10 @@ export function Settings({ onLogout }: { onLogout: () => void }) {
       )}
 
       <MFACard />
+
+      <PasskeysCard />
+
+      <SessionsCard />
 
       <Card title={t('Sessão')}>
         {me && (
@@ -225,6 +230,7 @@ export function MFACard() {
   const [setup, setSetup] = useState<{ secret: string; uri: string; qr: string } | null>(null)
   const [code, setCode] = useState('')
   const [pw, setPw] = useState('')
+  const [codes, setCodes] = useState<string[] | null>(null)
   const start = useMutation({
     mutationFn: async () => {
       const r = await api<{ secret: string; uri: string }>('/api/auth/mfa/setup', { method: 'POST' })
@@ -234,10 +240,11 @@ export function MFACard() {
     onSuccess: setSetup,
   })
   const enable = useMutation({
-    mutationFn: () => api('/api/auth/mfa/enable', { method: 'POST', body: { code } }),
-    onSuccess: () => {
+    mutationFn: () => api<{ recovery_codes?: string[] }>('/api/auth/mfa/enable', { method: 'POST', body: { code } }),
+    onSuccess: (r) => {
       setSetup(null)
       setCode('')
+      if (r.recovery_codes) setCodes(r.recovery_codes)
       qc.invalidateQueries({ queryKey: ['auth'] })
     },
   })
@@ -261,7 +268,9 @@ export function MFACard() {
   }
   return (
     <Card title={t('Verificação em duas etapas')} subtitle={on ? t('Ligada') : t('Desligada — recomendada, e obrigatória para alterar o Active Directory')}>
-      {on ? (
+      {codes ? (
+        <RecoveryCodes codes={codes} onClose={() => setCodes(null)} />
+      ) : on ? (
         <form
           className="space-y-3"
           onSubmit={(e) => {
@@ -276,7 +285,7 @@ export function MFACard() {
           </p>
           <div className={ad ? 'hidden' : 'grid gap-3 sm:grid-cols-2'}>
             <Input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder={t('Senha')} autoComplete="current-password" required={!ad} />
-            <Input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder={t('Código')} inputMode="numeric" required />
+            <Input value={code} onChange={(e) => setCode(e.target.value.slice(0, 12))} placeholder={t('Código do app ou de recuperação')} autoComplete="one-time-code" required />
           </div>
           <ErrorNote error={disable.error} />
           {!ad && (
@@ -314,6 +323,11 @@ export function MFACard() {
             {t('Ligar verificação em duas etapas')}
           </Button>
         </>
+      )}
+      {!codes && !setup && (
+        <div className="mt-4">
+          <RecoveryStatus />
+        </div>
       )}
     </Card>
   )

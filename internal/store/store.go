@@ -177,6 +177,12 @@ var migrations = []string{
 		last_used  INTEGER NOT NULL DEFAULT 0,
 		created_by TEXT NOT NULL DEFAULT ''
 	);`,
+
+	// Sessões com origem e último uso (página "Sessões ativas").
+	`ALTER TABLE sessions ADD COLUMN ip TEXT NOT NULL DEFAULT '';
+	ALTER TABLE sessions ADD COLUMN user_agent TEXT NOT NULL DEFAULT '';
+	ALTER TABLE sessions ADD COLUMN method TEXT NOT NULL DEFAULT '';
+	ALTER TABLE sessions ADD COLUMN last_seen INTEGER NOT NULL DEFAULT 0;`,
 }
 
 type Store struct {

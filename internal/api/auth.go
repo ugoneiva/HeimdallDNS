@@ -177,10 +177,10 @@ func (a *api) setupRequired() bool {
 	return err == nil && n == 0
 }
 
-func (a *api) startSession(w http.ResponseWriter, userID int64) error {
+func (a *api) startSession(w http.ResponseWriter, r *http.Request, userID int64, method string) error {
 	tok := randomToken(32)
 	exp := time.Now().Add(sessionTTL)
-	if err := a.Store.CreateSession(hashToken(tok), userID, exp); err != nil {
+	if err := a.Store.CreateSession(hashToken(tok), userID, exp, clientInfo(r, method)); err != nil {
 		return err
 	}
 	_ = a.Store.DeleteSessions(false) // limpa as vencidas
@@ -200,6 +200,8 @@ type userView struct {
 	Source      string    `json:"source"`
 	MFA         bool      `json:"mfa"`
 	MFARequired bool      `json:"mfa_required"`
+	Passkeys    int       `json:"passkeys"`
+	Recovery    int       `json:"recovery_left"`
 	Disabled    bool      `json:"disabled"`
 	Created     time.Time `json:"created"`
 	LastLogin   time.Time `json:"last_login"`
@@ -207,7 +209,7 @@ type userView struct {
 
 func (a *api) view(u *store.User) userView {
 	return userView{ID: u.ID, Username: u.Username, Display: u.Display, Role: u.Role, Source: u.Source, MFA: u.MFA.Enabled,
-		MFARequired: a.mustEnrollMFA(u), Disabled: u.Disabled, Created: u.Created, LastLogin: u.LastLogin}
+		MFARequired: a.mustEnrollMFA(u), Passkeys: len(u.MFA.Passkeys), Recovery: len(u.MFA.Recovery), Disabled: u.Disabled, Created: u.Created, LastLogin: u.LastLogin}
 }
 
 func (a *api) authState(w http.ResponseWriter, r *http.Request) {
@@ -281,7 +283,7 @@ func (a *api) setup(w http.ResponseWriter, r *http.Request) {
 	if a.Console == nil {
 		_ = a.Store.SetJSON(WizardKey, true) // instalação nova: o painel abre o assistente
 	}
-	if err := a.startSession(w, u.ID); err != nil {
+	if err := a.startSession(w, r, u.ID, "senha"); err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -298,9 +300,10 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-		Code     string `json:"code"`
+		Username string            `json:"username"`
+		Password string            `json:"password"`
+		Code     string            `json:"code"`
+		Passkey  *passkeyAssertion `json:"passkey"`
 	}
 	if !readJSON(w, r, &body) {
 		return
@@ -346,29 +349,39 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 		fail(errors.New("conta desativada"))
 		return
 	}
-	if u.MFA.Enabled {
-		if strings.TrimSpace(body.Code) == "" {
-			// Senha certa: o painel pede o código (não conta como erro).
-			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "informe o código do aplicativo autenticador", "mfa_required": true})
+	method := map[bool]string{true: "ad", false: "senha"}[u.Source == sourceAD]
+	if u.MFA.Strong() {
+		switch {
+		case body.Passkey != nil:
+			if err := a.verifyPasskey(r, &u, *body.Passkey, "login"); err != nil {
+				fail(err)
+				return
+			}
+			method += "+passkey"
+		case strings.TrimSpace(body.Code) != "":
+			second, err := a.verifySecond(r, &u, body.Code)
+			if err != nil {
+				fail(err)
+				return
+			}
+			method += "+" + second
+		default:
+			// Senha certa: o painel pede a segunda etapa (não conta como erro).
+			methods := []string{}
+			if u.MFA.Enabled {
+				methods = append(methods, "totp")
+			}
+			out := map[string]any{"error": "informe a segunda etapa", "mfa_required": true, "recovery": len(u.MFA.Recovery) > 0}
+			if ch := a.beginSecondFactor(r, &u); ch != nil {
+				methods = append(methods, "passkey")
+				out["passkey"] = ch
+			}
+			out["methods"] = methods
+			writeJSON(w, http.StatusUnauthorized, out)
 			return
 		}
-		if err := a.verifyUserMFA(&u, body.Code); err != nil {
-			fail(err)
-			return
-		}
 	}
-	a.guard.ok(ip)
-	u.LastLogin = time.Now()
-	if err := a.Store.SaveUser(&u); err != nil {
-		writeErr(w, http.StatusInternalServerError, err)
-		return
-	}
-	if err := a.startSession(w, u.ID); err != nil {
-		writeErr(w, http.StatusInternalServerError, err)
-		return
-	}
-	a.auditAs(r, u.Username, "auth.login", u.Username, map[string]any{"source": u.Source, "role": u.Role}, nil)
-	writeJSON(w, http.StatusOK, map[string]bool{"authenticated": true})
+	a.finishLogin(w, r, &u, method)
 }
 
 func (a *api) logout(w http.ResponseWriter, r *http.Request) {
@@ -444,7 +457,7 @@ func (a *api) changePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if p.Kind == kindSession {
-		if err := a.startSession(w, u.ID); err != nil {
+		if err := a.startSession(w, r, u.ID, "senha"); err != nil {
 			writeErr(w, http.StatusInternalServerError, err)
 			return
 		}

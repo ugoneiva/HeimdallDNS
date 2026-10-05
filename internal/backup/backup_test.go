@@ -32,7 +32,7 @@ func TestRoundTrip(t *testing.T) {
 			if _, err := st.AddList("Minha lista", "https://exemplo.com/l.txt", ""); err != nil {
 				t.Fatal(err)
 			}
-			if err := st.CreateSession("hash-da-sessao", 1, timeFar()); err != nil {
+			if err := st.CreateSession("hash-da-sessao", 1, timeFar(), store.SessionInfo{}); err != nil {
 				t.Fatal(err)
 			}
 			cfg := filepath.Join(src, "heimdalldns.yaml")

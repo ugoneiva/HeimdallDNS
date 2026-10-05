@@ -28,6 +28,25 @@ type MFA struct {
 	Enabled  bool   `json:"enabled"`
 	Pending  string `json:"pending,omitempty"`
 	LastStep int64  `json:"last_step,omitempty"`
+	// Recovery são os SHA-256 dos códigos de recuperação ainda não usados.
+	Recovery []string `json:"recovery,omitempty"`
+	// Passkeys (WebAuthn) da conta e o identificador aleatório da conta
+	// nelas (user handle; não revela o nome nem o id).
+	Passkeys []Passkey `json:"passkeys,omitempty"`
+	Handle   string    `json:"handle,omitempty"`
+}
+
+// Strong diz se a conta tem uma segunda etapa: app autenticador ou passkey.
+func (m MFA) Strong() bool { return m.Enabled || len(m.Passkeys) > 0 }
+
+// Passkey é uma credencial WebAuthn. Credential é o registro da biblioteca
+// (chave pública, contador, flags), guardado como veio.
+type Passkey struct {
+	ID         string          `json:"id"` // ID da credencial em base64url
+	Name       string          `json:"name"`
+	Created    time.Time       `json:"created"`
+	LastUsed   time.Time       `json:"last_used,omitzero"`
+	Credential json.RawMessage `json:"credential"`
 }
 
 type User struct {

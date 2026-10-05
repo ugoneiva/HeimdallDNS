@@ -100,7 +100,7 @@ Embutido no próprio binário, em `http://127.0.0.1:8053` por padrão. Tema escu
   - teste **"o que acontece com este domínio?"**, global ou por dispositivo, mostrando a regra que decide.
 - **Active Directory** (opcional): usuários, grupos, DNS do AD e auditoria; veja abaixo.
 - **DNS:** upstreams (predefinições cifradas ou próprios, trocados na hora, com latência e saúde de cada um) e registros locais A/AAAA/CNAME.
-- **Configurações:** tema, a própria senha e verificação em duas etapas; para administradores, também usuários, tokens de API, backup e restauração, migração do Pi-hole e auditoria.
+- **Configurações:** tema, a própria senha, verificação em duas etapas, passkeys, códigos de recuperação e sessões ativas; para administradores, também usuários, tokens de API, backup e restauração, migração do Pi-hole e auditoria.
 
 **Primeiro acesso:**
 1. Ao abrir o painel sem nenhuma conta, ele pede um **código de configuração** que o serviço imprime no log (`journalctl -u heimdalldns | grep codigo`). Assim, ninguém da rede cria o administrador antes do dono.
@@ -127,6 +127,18 @@ Embutido no próprio binário, em `http://127.0.0.1:8053` por padrão. Tema escu
 - um código não vale duas vezes;
 - desligar pede a senha e um código.
 
+**Códigos de recuperação:** ao ligar o MFA (ou cadastrar a primeira passkey) o painel mostra **10 códigos de uso único**, para copiar, baixar ou imprimir. Cada um entra uma vez no lugar do app ou da passkey.
+- O banco guarda só o hash; os códigos não aparecem de novo.
+- **Configurações** mostra quantos sobram e gera uma lista nova (pedindo a segunda etapa); a lista antiga deixa de valer.
+- Todo uso fica na auditoria (`auth.recovery_code`, com quantos restam).
+
+**Passkeys (WebAuthn):** digital, rosto ou chave de segurança, cadastradas em **Configurações → Passkeys**.
+- Valem como segunda etapa depois da senha, também para contas do AD com MFA obrigatório.
+- Nas contas locais também entram sozinhas, sem senha (**Entrar com passkey**). Nas do AD a senha do domínio continua sendo pedida, para valer o bloqueio feito no AD.
+- Exigem o painel aberto **por um nome com HTTPS** (`api.tls_cert`, certificado confiável no navegador) ou por `localhost`. Pelo IP o navegador não oferece passkey; sobram o app e os códigos.
+
+**Sessões ativas:** em **Configurações** cada pessoa vê onde a conta está aberta (navegador, IP, como entrou, último uso) e encerra uma sessão ou todas as outras. O administrador vê as sessões de todas as contas.
+
 O MFA é obrigatório para alterar o Active Directory pelo painel.
 
 **Tokens de API:** em **Configurações → Tokens de API**, para integrações como Grafana, scripts e automação.
@@ -142,7 +154,7 @@ O MFA é obrigatório para alterar o Active Directory pelo painel.
 
 A lista aparece em **Configurações → Auditoria** e vai para o SIEM com a exportação ligada (regras do Wazuh 112430 a 112440, inclusive detecção de força bruta).
 
-Esqueceu a senha? `sudo heimdalldns passwd -user nome` (padrão: `admin`). Perdeu o autenticador? Um administrador zera o MFA em **Usuários**, ou `sudo heimdalldns mfa-off -user nome`. Para listar as contas: `sudo heimdalldns users`.
+Esqueceu a senha? `sudo heimdalldns passwd -user nome` (padrão: `admin`). Perdeu o autenticador e os códigos de recuperação? Um administrador zera o MFA em **Usuários**, ou `sudo heimdalldns mfa-off -user nome` (apaga também as passkeys). Para listar as contas: `sudo heimdalldns users`.
 
 As listas e regras criadas pelo painel ficam no banco e se somam às do arquivo de configuração. As do arquivo aparecem no painel só para leitura.
 
@@ -369,6 +381,11 @@ heimdalldns restore copia.tar.gz.age -restart         # restaura e reinicia
 | `GET/POST /api/users` · `PATCH/DELETE /api/users/{id}` | contas do painel: criar, papel, desativar, redefinir senha, zerar MFA (`reset_mfa`) |
 | `GET/POST /api/tokens` · `DELETE /api/tokens/{id}` | tokens de API (`name`, `role`, `expires_days`); o token só volta na criação |
 | `GET /api/audit` | auditoria: alterações, logins e tentativas barradas (`range`, `limit`) |
+| `GET/DELETE /api/auth/sessions` · `DELETE /api/auth/sessions/{id}` | sessões da própria conta; sem `id` encerra todas as outras |
+| `GET /api/users/sessions` · `DELETE /api/users/sessions/{id}` | sessões de todas as contas (administrador) |
+| `POST /api/auth/mfa/recovery` | gera novos códigos de recuperação (`code` ou `passkey`) |
+| `GET /api/auth/passkeys` · `POST /api/auth/passkeys/begin`/`finish` · `DELETE /api/auth/passkeys/{id}` | passkeys da própria conta |
+| `POST /api/auth/passkey/begin` · `POST /api/auth/passkey/login` | login sem senha com passkey (contas locais) |
 | `GET /api/status` | contadores, cache, upstreams, regras |
 | `GET /api/clients` · `GET /api/clients/{ref}` | dispositivos |
 | `PATCH /api/clients/{ref}` | `name`, `allow`, `deny`, `skip_global_lists` |

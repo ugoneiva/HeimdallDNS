@@ -139,18 +139,24 @@ func (a *api) mfaEnable(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, errors.New("código inválido: confira a hora do celular e tente o código atual"))
 		return
 	}
-	u.MFA = store.MFA{Secret: u.MFA.Pending, Enabled: true, LastStep: step}
+	u.MFA.Secret, u.MFA.Enabled, u.MFA.Pending, u.MFA.LastStep = u.MFA.Pending, true, "", step
+	codes := ensureRecovery(u)
 	if err := a.Store.SaveUser(u); err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	a.audit(r, "auth.mfa_enable", u.Username, nil, nil)
-	writeJSON(w, http.StatusOK, map[string]bool{"enabled": true})
+	out := map[string]any{"enabled": true}
+	if codes != nil {
+		out["recovery_codes"] = codes // mostrados só agora
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
-// mfaDisable desliga. Pela sessão exige a senha (contas locais) e um código;
-// com o token raiz ("heimdalldns mfa-off -user x") não exige, para recuperar
-// o acesso de quem perdeu o celular.
+// mfaDisable desliga o app autenticador. Pela sessão exige a senha (contas
+// locais) e um código (do app ou de recuperação), e as passkeys continuam.
+// Com o token raiz ("heimdalldns mfa-off -user x") não exige nada e apaga
+// também as passkeys e os códigos: é a saída de quem perdeu tudo.
 func (a *api) mfaDisable(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Username string `json:"username"`
@@ -166,7 +172,7 @@ func (a *api) mfaDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if p.Kind == kindSession {
-		if a.mustEnrollMFA(u) || (u.Source == sourceAD && a.ADLogin.RequireMFA) {
+		if u.Source == sourceAD && a.ADLogin.RequireMFA && len(u.MFA.Passkeys) == 0 {
 			writeErr(w, http.StatusForbidden, errors.New("contas do Active Directory precisam da verificação em duas etapas"))
 			return
 		}
@@ -175,13 +181,22 @@ func (a *api) mfaDisable(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusForbidden, errors.New("senha incorreta"))
 			return
 		}
-		if err := a.verifyUserMFA(u, body.Code); err != nil {
+		if !u.MFA.Enabled {
+			writeErr(w, http.StatusConflict, errors.New("o aplicativo autenticador já está desligado"))
+			return
+		}
+		if _, err := a.verifySecond(r, u, body.Code); err != nil {
 			a.guard.fail(remoteIP(r))
 			writeErr(w, http.StatusForbidden, err)
 			return
 		}
+		u.MFA.Secret, u.MFA.Enabled, u.MFA.Pending, u.MFA.LastStep = "", false, "", 0
+		if len(u.MFA.Passkeys) == 0 {
+			u.MFA.Recovery = nil
+		}
+	} else {
+		u.MFA = store.MFA{}
 	}
-	u.MFA = store.MFA{}
 	if err := a.Store.SaveUser(u); err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return

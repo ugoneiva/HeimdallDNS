@@ -152,10 +152,25 @@ export type UserInfo = {
   source: 'local' | 'ad'
   mfa: boolean
   mfa_required: boolean
+  passkeys: number
+  recovery_left: number
   disabled: boolean
   created: string
   last_login: string
 }
+export type SessionInfo = {
+  id: string
+  user_id: number
+  username?: string
+  created: string
+  expires: string
+  last_seen: string
+  ip: string
+  user_agent: string
+  method: string
+  current: boolean
+}
+export type PasskeyInfo = { id: string; name: string; created: string; last_used?: string }
 export type AuthState = {
   setup_required: boolean
   authenticated: boolean

@@ -154,7 +154,7 @@ func runCLI(cmd string, args []string) error {
 		if err := c.do("POST", "/api/auth/mfa/disable", map[string]string{"username": *user}, nil); err != nil {
 			return err
 		}
-		fmt.Printf("verificação em duas etapas de %s desligada; ligue de novo pelo painel\n", *user)
+		fmt.Printf("verificação em duas etapas de %s desligada (app, passkeys e códigos de recuperação); ligue de novo pelo painel\n", *user)
 		return nil
 	case "users":
 		var us []struct {

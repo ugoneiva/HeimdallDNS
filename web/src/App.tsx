@@ -27,6 +27,7 @@ import { Wizard } from './pages/Wizard'
 import { NetworkMap } from './pages/NetworkMap'
 import { WebFilter } from './pages/WebFilter'
 import { MFACard } from './pages/Settings'
+import { PasskeysCard } from './pages/Account'
 import { roleLabel, useAuth } from './lib/auth'
 import { t } from './lib/i18n'
 
@@ -227,6 +228,7 @@ function EnrollMFA({ onLogout }: { onLogout: () => void }) {
           </div>
         </div>
         <MFACard />
+        <PasskeysCard />
         <button className="text-xs text-muted hover:text-ink" onClick={onLogout}>
           {t('Sair')}
         </button>

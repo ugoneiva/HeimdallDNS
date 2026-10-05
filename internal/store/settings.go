@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -93,23 +94,118 @@ func (s *Store) DeleteList(id int64) (bool, error) {
 	return n > 0, nil
 }
 
-func (s *Store) CreateSession(hash string, userID int64, expires time.Time) error {
-	_, err := s.db.Exec(`INSERT INTO sessions (token_hash, created, expires, user_id) VALUES (?, ?, ?, ?)`,
-		hash, time.Now().Unix(), expires.Unix(), userID)
+// SessionInfo é a origem de uma sessão do painel.
+type SessionInfo struct {
+	IP        string `json:"ip"`
+	UserAgent string `json:"user_agent"`
+	Method    string `json:"method"` // como entrou: senha, senha+totp, passkey…
+}
+
+// SessionRow é uma sessão ativa. ID é o começo do hash do cookie (o cookie em
+// si nunca fica no banco), suficiente para encerrar a sessão pelo painel.
+type SessionRow struct {
+	ID       string    `json:"id"`
+	UserID   int64     `json:"user_id"`
+	Created  time.Time `json:"created"`
+	Expires  time.Time `json:"expires"`
+	LastSeen time.Time `json:"last_seen"`
+	SessionInfo
+}
+
+const sessionIDLen = 16
+
+func (s *Store) CreateSession(hash string, userID int64, expires time.Time, info SessionInfo) error {
+	now := time.Now().Unix()
+	_, err := s.db.Exec(`INSERT INTO sessions (token_hash, created, expires, user_id, ip, user_agent, method, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		hash, now, expires.Unix(), userID, info.IP, truncate(info.UserAgent, 300), info.Method, now)
 	return err
 }
 
-// Session devolve o dono da sessão, se ela existir e não tiver vencido.
+// Session devolve o dono da sessão, se ela existir e não tiver vencido, e
+// marca o último uso (no máximo uma escrita por minuto).
 func (s *Store) Session(hash string) (userID int64, ok bool, err error) {
-	var exp int64
-	err = s.db.QueryRow(`SELECT expires, user_id FROM sessions WHERE token_hash = ?`, hash).Scan(&exp, &userID)
+	var exp, seen int64
+	err = s.db.QueryRow(`SELECT expires, user_id, last_seen FROM sessions WHERE token_hash = ?`, hash).Scan(&exp, &userID, &seen)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, false, nil
 	}
 	if err != nil {
 		return 0, false, err
 	}
-	return userID, time.Now().Unix() < exp, nil
+	now := time.Now().Unix()
+	if now >= exp {
+		return userID, false, nil
+	}
+	if now-seen >= 60 {
+		_, _ = s.db.Exec(`UPDATE sessions SET last_seen = ? WHERE token_hash = ?`, now, hash)
+	}
+	return userID, true, nil
+}
+
+// Sessions lista as sessões válidas (userID 0 = de todos), mais recentes primeiro.
+func (s *Store) Sessions(userID int64) ([]SessionRow, error) {
+	rows, err := s.db.Query(`SELECT token_hash, user_id, created, expires, last_seen, ip, user_agent, method FROM sessions
+		WHERE expires > ? AND (? = 0 OR user_id = ?) ORDER BY last_seen DESC`, time.Now().Unix(), userID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []SessionRow{}
+	for rows.Next() {
+		var (
+			r                      SessionRow
+			hash                   string
+			created, expires, seen int64
+		)
+		if err := rows.Scan(&hash, &r.UserID, &created, &expires, &seen, &r.IP, &r.UserAgent, &r.Method); err != nil {
+			return nil, err
+		}
+		r.ID = SessionID(hash)
+		r.Created, r.Expires = time.Unix(created, 0), time.Unix(expires, 0)
+		if seen > 0 {
+			r.LastSeen = time.Unix(seen, 0)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// SessionID é o identificador público da sessão (começo do hash).
+func SessionID(hash string) string {
+	if len(hash) > sessionIDLen {
+		return hash[:sessionIDLen]
+	}
+	return hash
+}
+
+// DeleteSessionByID encerra uma sessão pelo ID público; userID ≠ 0 só deixa
+// encerrar as sessões daquele usuário. Devolve se encerrou alguma.
+func (s *Store) DeleteSessionByID(id string, userID int64) (bool, error) {
+	if len(id) != sessionIDLen || strings.Trim(id, "0123456789abcdef") != "" {
+		return false, nil
+	}
+	res, err := s.db.Exec(`DELETE FROM sessions WHERE substr(token_hash, 1, ?) = ? AND (? = 0 OR user_id = ?)`, sessionIDLen, id, userID, userID)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
+
+// DeleteOtherSessions encerra as sessões do usuário menos a atual.
+func (s *Store) DeleteOtherSessions(userID int64, keepHash string) (int64, error) {
+	res, err := s.db.Exec(`DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?`, userID, keepHash)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n]
 }
 
 // DeleteUserSessions encerra as sessões de um usuário (troca de senha,

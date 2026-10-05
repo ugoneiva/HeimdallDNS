@@ -168,7 +168,7 @@ func (a *api) requireAuth(next http.Handler) http.Handler {
 
 // mustEnrollMFA: contas do AD precisam de MFA (ad.login.require_mfa).
 func (a *api) mustEnrollMFA(u *store.User) bool {
-	return u.Source == sourceAD && a.ADLogin.RequireMFA && !u.MFA.Enabled
+	return u.Source == sourceAD && a.ADLogin.RequireMFA && !u.MFA.Strong()
 }
 
 // statusWriter guarda o código da resposta para a auditoria genérica.

@@ -3,19 +3,22 @@
 
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { KeyRound } from 'lucide-react'
+import { Fingerprint, KeyRound } from 'lucide-react'
 import { api, ApiError } from '../api'
 import { Button, ErrorNote, Field, Input } from '../components/ui'
 import { Logo } from '../components/Logo'
 import { LangPicker } from '../components/LangPicker'
 import { GuardianScene, RuneBand } from '../components/art'
 import { t } from '../lib/i18n'
+import { answer, passkeySupport, type PasskeyChallenge } from '../lib/webauthn'
 
 export function Login({ setup, adLogin, onDone }: { setup: boolean; adLogin?: boolean; onDone: () => void }) {
   const [code, setCode] = useState('')
   const [user, setUser] = useState(setup ? 'admin' : '')
   const [otp, setOtp] = useState('')
   const [askOtp, setAskOtp] = useState(false)
+  // Segunda etapa pedida pelo servidor: métodos aceitos e o desafio da passkey.
+  const [second, setSecond] = useState<{ methods: string[]; passkey?: PasskeyChallenge; recovery: boolean } | null>(null)
   const [pw, setPw] = useState('')
   const [pw2, setPw2] = useState('')
   const m = useMutation({
@@ -28,11 +31,36 @@ export function Login({ setup, adLogin, onDone }: { setup: boolean; adLogin?: bo
     },
     onSuccess: onDone,
     onError: (e) => {
-      // Senha certa e conta com MFA: o servidor pede o código.
-      if (e instanceof ApiError && e.data?.mfa_required) setAskOtp(true)
+      // Senha certa e conta com MFA: o servidor pede a segunda etapa.
+      if (e instanceof ApiError && e.data?.mfa_required) {
+        setAskOtp(true)
+        setSecond({
+          methods: (e.data.methods as string[]) ?? ['totp'],
+          passkey: e.data.passkey as PasskeyChallenge | undefined,
+          recovery: !!e.data.recovery,
+        })
+      }
     },
   })
+  // Segunda etapa com a passkey (depois da senha certa).
+  const withKey = useMutation({
+    mutationFn: async () => {
+      if (!second?.passkey) throw new Error(t('Peça o desafio de novo.'))
+      return api('/api/auth/login', { method: 'POST', body: { username: user, password: pw, passkey: await answer(second.passkey) } })
+    },
+    onSuccess: onDone,
+    onError: () => m.mutate(), // desafio gasto: pede um novo
+  })
+  // Entrar só com a passkey (contas locais).
+  const passwordless = useMutation({
+    mutationFn: async () => {
+      const ch = await api<PasskeyChallenge>('/api/auth/passkey/begin', { method: 'POST' })
+      return api('/api/auth/passkey/login', { method: 'POST', body: await answer(ch) })
+    },
+    onSuccess: onDone,
+  })
   const needsOtpNow = m.error instanceof ApiError && m.error.data?.mfa_required && !otp
+  const totp = !second || second.methods.includes('totp')
 
   return (
     <div className="relative grid min-h-full place-items-center px-4 py-10">
@@ -86,17 +114,30 @@ export function Login({ setup, adLogin, onDone }: { setup: boolean; adLogin?: bo
               required
             />
           </Field>
-          {!setup && askOtp && (
-            <Field label={t('Código do aplicativo autenticador')}>
+          {!setup && askOtp && second?.passkey && (
+            <Button
+              variant="primary"
+              className="w-full"
+              loading={withKey.isPending}
+              icon={<Fingerprint className="size-4" />}
+              onClick={() => withKey.mutate()}
+            >
+              {t('Confirmar com a passkey')}
+            </Button>
+          )}
+          {!setup && askOtp && (totp || second?.recovery) && (
+            <Field
+              label={totp ? t('Código do aplicativo autenticador') : t('Código de recuperação')}
+              hint={second?.recovery ? t('Sem o celular? Use um código de recuperação.') : undefined}
+            >
               <Input
                 value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                inputMode="numeric"
+                onChange={(e) => setOtp(e.target.value.replace(/\s/g, '').slice(0, 12))}
                 autoComplete="one-time-code"
-                placeholder="000000"
+                placeholder={totp ? '000000' : 'xxxxx-xxxxx'}
                 className="font-mono tracking-widest"
-                required
-                autoFocus
+                required={!second?.passkey}
+                autoFocus={!second?.passkey}
               />
             </Field>
           )}
@@ -106,10 +147,19 @@ export function Login({ setup, adLogin, onDone }: { setup: boolean; adLogin?: bo
             </Field>
           )}
           {!needsOtpNow && <ErrorNote error={m.error} />}
+          <ErrorNote error={withKey.error} />
           <Button type="submit" variant="primary" className="w-full" loading={m.isPending} icon={<KeyRound className="size-4" />}>
             {setup ? t('Criar e entrar') : t('Entrar')}
           </Button>
         </form>
+        {!setup && !askOtp && passkeySupport() === 'ok' && (
+          <div className="mt-3 space-y-2">
+            <Button className="w-full" loading={passwordless.isPending} icon={<Fingerprint className="size-4" />} onClick={() => passwordless.mutate()}>
+              {t('Entrar com passkey')}
+            </Button>
+            <ErrorNote error={passwordless.error} />
+          </div>
+        )}
         <div className="mt-4 flex justify-center">
           <LangPicker />
         </div>

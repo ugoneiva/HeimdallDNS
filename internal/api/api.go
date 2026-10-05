@@ -81,10 +81,12 @@ type NRDInfo interface {
 
 type api struct {
 	Deps
-	guard     guard
-	setupMu   sync.Mutex
-	setupCode string // código para definir a senha na primeira abertura
-	imports   importer
+	guard   guard
+	setupMu sync.Mutex
+	// desafios das passkeys entre o começo e o fim
+	ceremonies ceremonies
+	setupCode  string // código para definir a senha na primeira abertura
+	imports    importer
 }
 
 func New(d Deps) http.Handler {
@@ -185,6 +187,7 @@ func build(d Deps) (*api, http.Handler) {
 	root.HandleFunc("POST /api/auth/setup", a.setup)
 	root.HandleFunc("POST /api/auth/login", a.login)
 	root.HandleFunc("POST /api/auth/logout", a.logout)
+	a.accountRoutes(api, root)
 	if d.HA.Source != nil {
 		root.Handle("GET /api/sync/snapshot", d.HA.Source) // token próprio de sincronização
 	}
@@ -407,6 +410,7 @@ func (a *api) consoleRoutes() http.Handler {
 	root.HandleFunc("POST /api/auth/setup", a.setup)
 	root.HandleFunc("POST /api/auth/login", a.login)
 	root.HandleFunc("POST /api/auth/logout", a.logout)
+	a.accountRoutes(api, root)
 	root.Handle("/api/", a.requireAuth(a.auditWrites(api)))
 	if a.UI != nil {
 		root.Handle("/", uiHandler(a.UI))

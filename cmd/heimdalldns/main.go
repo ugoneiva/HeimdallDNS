@@ -22,6 +22,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -710,6 +711,9 @@ func newHA(ctx context.Context, cfg *config.Config, db *store.Store, flt *filter
 				// faria a versão do snapshot girar à toa.
 				snap.Users[i].LastLogin = time.Time{}
 				snap.Users[i].MFA.Pending, snap.Users[i].MFA.LastStep = "", 0
+				for j := range snap.Users[i].MFA.Passkeys {
+					snap.Users[i].MFA.Passkeys[j].LastUsed = time.Time{}
+				}
 			}
 			if snap.Tokens, err = db.Tokens(); err != nil {
 				return snap, err
@@ -810,6 +814,14 @@ func newHA(ctx context.Context, cfg *config.Config, db *store.Store, flt *filter
 								s.Users[i].LastLogin = l.LastLogin
 								if l.MFA.Secret == u.MFA.Secret {
 									s.Users[i].MFA.LastStep = l.MFA.LastStep
+								}
+								s.Users[i].MFA.Recovery = keepUsedRecovery(u.MFA.Recovery, l.MFA.Recovery)
+								for j, pk := range s.Users[i].MFA.Passkeys {
+									for _, lp := range l.MFA.Passkeys {
+										if lp.ID == pk.ID {
+											s.Users[i].MFA.Passkeys[j].LastUsed = lp.LastUsed
+										}
+									}
 								}
 							}
 						}
@@ -962,7 +974,7 @@ Comandos:
   services                          serviços para regras (service:tiktok, service:social…)
   users                             lista as contas do painel
   passwd  [-user nome]              define uma nova senha (recupera o acesso; padrão: admin)
-  mfa-off [-user nome]              desliga a verificação em duas etapas (perdeu o celular)
+  mfa-off [-user nome]              desliga a verificação em duas etapas e apaga as passkeys (perdeu o celular)
   backup  [-o arquivo] [-full] [-encrypt | -passphrase-file f]
                                     baixa um backup (banco + configuração)
   restore <arquivo> [-passphrase-file f] [-restart]
@@ -974,4 +986,20 @@ Comandos:
 Opções do servidor:
 `)
 	flag.PrintDefaults()
+}
+
+// keepUsedRecovery: um código de recuperação gasto nesta réplica não volta
+// a valer com a sincronização. Se o principal gerou códigos novos (nenhum em
+// comum), valem os novos.
+func keepUsedRecovery(primary, local []string) []string {
+	var common []string
+	for _, h := range primary {
+		if slices.Contains(local, h) {
+			common = append(common, h)
+		}
+	}
+	if len(common) == 0 {
+		return primary
+	}
+	return common
 }
