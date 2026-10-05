@@ -492,7 +492,7 @@ func TestWebFilterInServer(t *testing.T) {
 	last := func() Event {
 		mu.Lock()
 		defer mu.Unlock()
-		return last()
+		return events[len(events)-1]
 	}
 	b := filter.NewBuilder()
 	b.AddLine("@@||liberado.aposta.test^", false)
