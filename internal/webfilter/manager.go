@@ -192,7 +192,9 @@ func (m *Manager) build(ctx context.Context, c Category, download bool) (*filter
 	var errs []string
 	for _, src := range c.Sources {
 		path := m.cachePath(src.URL)
-		if _, err := os.Stat(path); err != nil || download {
+		// Baixa se pedido, se não há cópia ou se a cópia passou da validade
+		// (reiniciar o serviço não pode deixar a lista envelhecer para sempre).
+		if fi, err := os.Stat(path); err != nil || download || (m.opts.Interval > 0 && time.Since(fi.ModTime()) > m.opts.Interval) {
 			if err := m.download(ctx, src.URL, path); err != nil {
 				errs = append(errs, src.Name+": "+err.Error())
 			}

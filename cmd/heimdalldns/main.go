@@ -480,6 +480,7 @@ func runServer() error {
 		case <-hup:
 			log.Info("SIGHUP: atualizando as listas")
 			go flt.Refresh(ctx)
+			go wf.Refresh(ctx)
 		case <-ctx.Done():
 			log.Info("encerrando")
 			sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

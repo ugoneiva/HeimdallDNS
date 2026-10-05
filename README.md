@@ -180,6 +180,8 @@ Precedência:
 
 Limite do filtro por DNS: ele vê o domínio, não a página. Bloqueia o site inteiro, não um vídeo ou um post.
 
+**Atualização das listas:** automática. As listas de bloqueio são baixadas ao ligar o serviço e depois a cada `filter.update_interval` (padrão 24 h); as do filtro web também, só as categorias em uso. Se um download falhar, vale a última cópia. Para antecipar: botão **Atualizar** nas telas ou `systemctl reload heimdalldns`.
+
 ### Grupos de dispositivos e horários
 
 Em **Dispositivos → Grupos e horários**, crie grupos como Crianças, Visitantes ou Financeiro. Cada grupo tem:

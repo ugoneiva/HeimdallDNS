@@ -8,9 +8,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestCatalogValid(t *testing.T) {
@@ -131,5 +134,36 @@ func TestCategoriesLoadOnlyUsed(t *testing.T) {
 	}
 	if m.SetSettings(Settings{Global: []string{"inexistente"}}) == nil {
 		t.Error("categoria inválida")
+	}
+}
+
+func TestStaleCacheIsRefreshedOnStart(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		fmt.Fprintln(w, "||velho.test^")
+	}))
+	defer srv.Close()
+	old := Catalog
+	defer func() { Catalog = old }()
+	Catalog = []Category{{ID: "x", Name: "X", Sources: []Source{{Name: "s", URL: srv.URL, License: "x"}}}}
+	dir := t.TempDir()
+	start := func() {
+		m := New(Options{CacheDir: dir, Interval: time.Hour})
+		m.SetUsed([]string{"x"})
+		m.reload(context.Background(), false)
+	}
+	start() // sem cópia: baixa
+	start() // cópia nova: não baixa
+	if hits.Load() != 1 {
+		t.Fatalf("downloads = %d, quero 1", hits.Load())
+	}
+	// Cópia com mais de 1 h (o intervalo): a partida seguinte baixa de novo.
+	files, _ := filepath.Glob(filepath.Join(dir, "web-*.txt"))
+	past := time.Now().Add(-2 * time.Hour)
+	os.Chtimes(files[0], past, past)
+	start()
+	if hits.Load() != 2 {
+		t.Errorf("cópia vencida deveria ser baixada de novo: %d downloads", hits.Load())
 	}
 }
