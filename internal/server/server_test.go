@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/netip"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -484,21 +485,33 @@ func TestWebFilterInServer(t *testing.T) {
 	addr, _ := fakeUpstream(t)
 	ups, _ := upstream.New(upstream.Options{Servers: []string{addr}, Timeout: time.Second})
 	t.Cleanup(func() { ups.Close() })
-	var events []Event
+	var (
+		mu     sync.Mutex
+		events []Event
+	)
+	last := func() Event {
+		mu.Lock()
+		defer mu.Unlock()
+		return last()
+	}
 	b := filter.NewBuilder()
 	b.AddLine("@@||liberado.aposta.test^", false)
 	mt := b.Build()
 	srv := New(Options{Listen: []string{"127.0.0.1:0"}, Allowed: []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")},
 		Cache: cache.New(cache.Options{Size: 50}), Upstream: ups, WebFilter: fakeWeb{}, BlockMode: config.BlockNXDomain,
-		Filter: func() *filter.Matcher { return mt }, OnQuery: func(e Event) { events = append(events, e) }})
+		Filter: func() *filter.Matcher { return mt }, OnQuery: func(e Event) {
+			mu.Lock()
+			events = append(events, e)
+			mu.Unlock()
+		}})
 	if err := srv.Start(); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { srv.Shutdown(t.Context()) })
 	dst := srv.Addrs()[0].String()
 
-	if r := query(t, dst, "www.aposta.test", dns.TypeA, "udp"); r.Rcode != dns.RcodeNameError || events[len(events)-1].Category != "web:apostas" {
-		t.Errorf("categoria global: rcode %d, evento %+v", r.Rcode, events[len(events)-1])
+	if r := query(t, dst, "www.aposta.test", dns.TypeA, "udp"); r.Rcode != dns.RcodeNameError || last().Category != "web:apostas" {
+		t.Errorf("categoria global: rcode %d, evento %+v", r.Rcode, last())
 	}
 	if r := query(t, dst, "liberado.aposta.test", dns.TypeA, "udp"); r.Rcode != dns.RcodeSuccess {
 		t.Error("exceção global vence a categoria")
@@ -507,8 +520,8 @@ func TestWebFilterInServer(t *testing.T) {
 	if len(r.Answer) != 2 || r.Answer[0].(*dns.CNAME).Target != "forcesafesearch.google.com." || r.Answer[1].(*dns.A).A.String() != "1.2.3.4" {
 		t.Errorf("busca segura = %v", r.Answer)
 	}
-	if !strings.HasPrefix(events[len(events)-1].Rule, "busca segura") {
-		t.Errorf("evento da busca segura = %+v", events[len(events)-1])
+	if !strings.HasPrefix(last().Rule, "busca segura") {
+		t.Errorf("evento da busca segura = %+v", last())
 	}
 	if r := query(t, dst, "www.jogo.test", dns.TypeA, "udp"); r.Rcode != dns.RcodeSuccess {
 		t.Error("categoria de grupo não vale para quem não está no grupo")
